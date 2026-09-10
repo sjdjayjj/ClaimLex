@@ -1,5 +1,5 @@
 import { CalculationParams } from '../core/types';
-import { LLMConfig, LLMPreset, ParsedAnalysisResult } from './llmTypes';
+import { LLMConfig, LLMPreset, ParsedAnalysisResult, BatchCaseClient } from './llmTypes';
 import { JUDGMENT_PARSER_PROMPT } from '../parser/prompt';
 import dayjs from 'dayjs';
 
@@ -402,6 +402,27 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
     ? rawJson.reasoning.trim()
     : '大模型已完成裁判要素归纳，未返回详细理由文本。';
 
+  const rawBatchClients = Array.isArray(rawJson.batchClients) ? rawJson.batchClients : [];
+  const batchClients: BatchCaseClient[] = rawBatchClients.map((c: any, index: number) => ({
+    id: String(c.id || index + 1),
+    caseNo: c.caseNo || rawJson.caseNo,
+    defendant: c.defendant || `客户_${index + 1}`,
+    gender: c.gender,
+    nation: c.nation,
+    idCard: c.idCard,
+    idAddress: c.idAddress,
+    principal: Number(c.principal) || 0,
+    baseInterest: Number(c.baseInterest) || 0,
+    basePenalty: Number(c.basePenalty) || 0,
+    baseCompound: Number(c.baseCompound) || 0,
+    cutoffDate: typeof c.cutoffDate === 'string' && c.cutoffDate.length >= 8 ? c.cutoffDate : (rawJson.baseDate || today),
+    litigationFee: Number(c.litigationFee) || 0,
+    preservationFee: Number(c.preservationFee) || 0,
+    notes: c.notes,
+  }));
+
+  const isBatchCase = rawJson.isBatchCase === true || batchClients.length > 1;
+
   return {
     params,
     extra: {
@@ -410,6 +431,9 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
       defendant: rawJson.defendant,
       reasoning,
       keyPoints: Array.isArray(rawJson.keyPoints) ? rawJson.keyPoints : [],
+      isBatchCase,
+      batchClients,
+      selectedClientId: batchClients.length > 0 ? batchClients[0].id : undefined,
     },
   };
 }
@@ -509,6 +533,9 @@ export async function analyzeJudgmentWithLLM(
       reasoning: extra.reasoning || '',
       keyPoints: extra.keyPoints,
       rawOutput: rawContent,
+      isBatchCase: extra.isBatchCase,
+      batchClients: extra.batchClients,
+      selectedClientId: extra.selectedClientId,
     };
   } catch (error: any) {
     clearTimeout(timeout);
