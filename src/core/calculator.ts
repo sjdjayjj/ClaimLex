@@ -9,6 +9,14 @@ import {
 import { RATE_HISTORY } from './rates';
 import dayjs from 'dayjs';
 
+/**
+ * 严格四舍五入到分（保留两位小数）
+ */
+export const roundToFen = (num: number): number => {
+  if (isNaN(num)) return 0;
+  return Math.round((num + Number.EPSILON) * 100) / 100;
+};
+
 export class InterestCalculator {
   /**
    * 获取特定日期的基础利率或LPR
@@ -98,8 +106,8 @@ export class InterestCalculator {
       // 3. 执行罚息年利率
       const penaltyRate = actualContractRate * penaltyMultiple;
 
-      // 4. 利息/罚息计算: 实际天数 / 360
-      const periodPenalty = principal * (penaltyRate / 100) * (days / 360);
+      // 4. 利息/罚息计算: 实际天数 / 360，精确到分
+      const periodPenalty = roundToFen(principal * (penaltyRate / 100) * (days / 360));
 
       // 5. 复利计算
       let compoundBase = 0;
@@ -111,21 +119,21 @@ export class InterestCalculator {
 
       let periodCompound = 0;
       if (compoundMode !== 'NONE') {
-        periodCompound = compoundBase * (penaltyRate / 100) * (days / 360);
+        periodCompound = roundToFen(compoundBase * (penaltyRate / 100) * (days / 360));
       }
 
-      // 6. 迟延履行金计算：法定每日万分之1.75
+      // 6. 迟延履行金计算：法定每日万分之1.75，精确到分
       let periodDelay = 0;
       if (delayInterestEnabled) {
         const executionBase = principal + baseInterest + basePenalty;
-        periodDelay = executionBase * 0.000175 * days;
+        periodDelay = roundToFen(executionBase * 0.000175 * days);
       }
 
-      const subtotal = periodPenalty + periodCompound + periodDelay;
+      const subtotal = roundToFen(periodPenalty + periodCompound + periodDelay);
 
-      totalPenalty += periodPenalty;
-      totalCompound += periodCompound;
-      totalDelay += periodDelay;
+      totalPenalty = roundToFen(totalPenalty + periodPenalty);
+      totalCompound = roundToFen(totalCompound + periodCompound);
+      totalDelay = roundToFen(totalDelay + periodDelay);
 
       intervals.push({
         start,
@@ -133,7 +141,7 @@ export class InterestCalculator {
         days,
         baseRate,
         penaltyRate,
-        principal,
+        principal: roundToFen(principal),
         interest: periodPenalty,
         compound: periodCompound,
         delay: periodDelay,
@@ -141,11 +149,11 @@ export class InterestCalculator {
       });
     }
 
-    const totalDebt = principal + baseInterest + basePenalty + totalPenalty + totalCompound + totalDelay;
+    const totalDebt = roundToFen(principal + baseInterest + basePenalty + totalPenalty + totalCompound + totalDelay);
 
     return {
       totalDays,
-      principal,
+      principal: roundToFen(principal),
       newPenalty: totalPenalty,
       newCompound: totalCompound,
       delayInterest: totalDelay,
