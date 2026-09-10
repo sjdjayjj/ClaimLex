@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { InterestCalculator } from '../core/calculator';
+import { InterestCalculator, roundToFen } from '../core/calculator';
 import { CalculationParams, CalculationResult } from '../core/types';
 import { RATE_HISTORY } from '../core/rates';
 import { extractTextFromPDF } from '../parser/pdfUtil';
@@ -165,14 +165,14 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   },
   {
     id: '6',
-    caseNo: '(2022)粤0304民初21165号',
+    caseNo: '(2022)粤0304民初21159号',
     defendant: '贺伟',
     gender: '男',
     nation: '汉族',
-    idCard: '413023198209086416',
-    idAddress: '河南省信阳市浉河区董家河乡教育路318号',
-    principal: 227800.00,
-    baseInterest: 6195.16,
+    idCard: '420621198506197519',
+    idAddress: '湖北省襄阳市襄州区黄集镇毛营村六组25号',
+    principal: 200000.00,
+    baseInterest: 0,
     basePenalty: 13357.46,
     baseCompound: 783.81,
     cutoffDate: '2020-11-02',
@@ -180,6 +180,18 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
     preservationFee: 0,
   },
 ];
+
+/**
+ * 统一金额格式化：严格精确到分位（保留且仅保留2位小数，千分位，绝无3位小数）
+ */
+export const formatMoney = (val?: number | null): string => {
+  if (val === undefined || val === null || isNaN(Number(val))) return '0.00';
+  const num = roundToFen(Number(val));
+  return num.toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
 
 export const AgentUI: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'agent' | 'rates' | 'guide'>('agent');
@@ -341,13 +353,13 @@ export const AgentUI: React.FC = () => {
 
     if (!analysisResult) return;
 
-    // 依据选定客户重构计算参数
+    // 依据选定客户重构计算参数（严格精确到分位）
     const currentParams = params || analysisResult.params;
     const updatedParams: CalculationParams = {
       ...currentParams,
-      principal: client.principal,
-      baseInterest: client.baseInterest,
-      basePenalty: client.basePenalty,
+      principal: roundToFen(client.principal),
+      baseInterest: roundToFen(client.baseInterest),
+      basePenalty: roundToFen(client.basePenalty),
       baseDate: client.cutoffDate || currentParams.baseDate,
     };
 
@@ -418,7 +430,11 @@ export const AgentUI: React.FC = () => {
   // 人机协同交互：支持微调任何参数并实时热重算
   const handleParamChange = (field: keyof CalculationParams, value: any) => {
     if (!params) return;
-    const updated = { ...params, [field]: value };
+    let cleanVal = value;
+    if (['principal', 'baseInterest', 'basePenalty'].includes(field)) {
+      cleanVal = roundToFen(Number(value) || 0);
+    }
+    const updated = { ...params, [field]: cleanVal };
     setParams(updated);
     try {
       const calculator = new InterestCalculator();
@@ -875,22 +891,22 @@ export const AgentUI: React.FC = () => {
                                   {client.idAddress || '-'}
                                 </td>
                                 <td className="px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
-                                  ￥{client.principal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                  ￥{formatMoney(client.principal)}
                                 </td>
                                 <td className="px-3.5 py-2.5 text-right font-mono text-slate-300 whitespace-nowrap">
-                                  ￥{client.baseInterest.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                  ￥{formatMoney(client.baseInterest)}
                                 </td>
                                 <td className="px-3.5 py-2.5 text-right font-mono text-amber-400 whitespace-nowrap">
-                                  ￥{client.basePenalty.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                  ￥{formatMoney(client.basePenalty)}
                                 </td>
                                 <td className="px-3.5 py-2.5 text-right font-mono text-purple-400 whitespace-nowrap">
-                                  ￥{(client.baseCompound || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                  ￥{formatMoney(client.baseCompound)}
                                 </td>
                                 <td className="px-3.5 py-2.5 font-mono text-xs text-slate-300 whitespace-nowrap">
                                   {client.cutoffDate || '-'}
                                 </td>
                                 <td className="px-3.5 py-2.5 text-right font-mono text-xs text-slate-400 whitespace-nowrap">
-                                  {client.litigationFee ? `￥${client.litigationFee}` : '-'}{client.preservationFee ? ` / ￥${client.preservationFee}` : ''}
+                                  {client.litigationFee ? `￥${formatMoney(client.litigationFee)}` : '-'}{client.preservationFee ? ` / ￥${formatMoney(client.preservationFee)}` : ''}
                                 </td>
                                 <td className="px-3.5 py-2.5 text-center whitespace-nowrap">
                                   <button
@@ -943,6 +959,7 @@ export const AgentUI: React.FC = () => {
                         <label className="block text-[11px] font-semibold text-slate-400">尚欠本金余额 (元)</label>
                         <input
                           type="number"
+                          step="0.01"
                           value={params.principal}
                           onChange={(e) => handleParamChange('principal', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
@@ -953,6 +970,7 @@ export const AgentUI: React.FC = () => {
                         <label className="block text-[11px] font-semibold text-slate-400">历史欠付利息 (元)</label>
                         <input
                           type="number"
+                          step="0.01"
                           value={params.baseInterest}
                           onChange={(e) => handleParamChange('baseInterest', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
@@ -963,6 +981,7 @@ export const AgentUI: React.FC = () => {
                         <label className="block text-[11px] font-semibold text-slate-400">历史罚复利 (元)</label>
                         <input
                           type="number"
+                          step="0.01"
                           value={params.basePenalty}
                           onChange={(e) => handleParamChange('basePenalty', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
@@ -1103,7 +1122,7 @@ export const AgentUI: React.FC = () => {
                       <span>基准日本金余额</span>
                       <DollarSign className="w-3.5 h-3.5 text-slate-400" />
                     </div>
-                    <div className="text-xl font-bold text-slate-200">￥{result.principal.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div className="text-xl font-bold text-slate-200">￥{formatMoney(result.principal)}</div>
                     <div className="text-[11px] text-slate-500">判决固定本金</div>
                   </div>
 
@@ -1112,7 +1131,7 @@ export const AgentUI: React.FC = () => {
                       <span>新发生利息/罚息</span>
                       <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
                     </div>
-                    <div className="text-xl font-bold text-amber-400">￥{result.newPenalty.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div className="text-xl font-bold text-amber-400">￥{formatMoney(result.newPenalty)}</div>
                     <div className="text-[11px] text-slate-500">分段浮动累加</div>
                   </div>
 
@@ -1121,7 +1140,7 @@ export const AgentUI: React.FC = () => {
                       <span>新发生复利</span>
                       <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
                     </div>
-                    <div className="text-xl font-bold text-amber-400">￥{result.newCompound.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div className="text-xl font-bold text-amber-400">￥{formatMoney(result.newCompound)}</div>
                     <div className="text-[11px] text-slate-500">滚动欠息复利</div>
                   </div>
 
@@ -1130,7 +1149,7 @@ export const AgentUI: React.FC = () => {
                       <span>迟延履行加倍金</span>
                       <Clock className="w-3.5 h-3.5 text-indigo-400" />
                     </div>
-                    <div className="text-xl font-bold text-indigo-400">￥{result.delayInterest.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div className="text-xl font-bold text-indigo-400">￥{formatMoney(result.delayInterest)}</div>
                     <div className="text-[11px] text-slate-500">日万分之 1.75</div>
                   </div>
 
@@ -1139,7 +1158,7 @@ export const AgentUI: React.FC = () => {
                       <span>债权本息合计总额</span>
                       <ShieldCheck className="w-4 h-4 text-red-400" />
                     </div>
-                    <div className="text-2xl font-black text-red-400">￥{result.totalDebt.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div className="text-2xl font-black text-red-400">￥{formatMoney(result.totalDebt)}</div>
                     <div className="text-[11px] text-red-300/80">包含基准日前未清款</div>
                   </div>
                 </div>
@@ -1179,11 +1198,11 @@ export const AgentUI: React.FC = () => {
                             <td className="px-3.5 py-2.5 text-right font-bold text-slate-300">{row.days}</td>
                             <td className="px-3.5 py-2.5 text-right text-blue-400 font-mono font-medium">{row.baseRate.toFixed(2)}%</td>
                             <td className="px-3.5 py-2.5 text-right text-amber-400 font-mono font-bold">{row.penaltyRate.toFixed(4)}%</td>
-                            <td className="px-3.5 py-2.5 text-right text-slate-300 font-mono">￥{row.principal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{row.interest.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{row.compound.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{row.delay.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                            <td className="px-3.5 py-2.5 text-right font-bold text-emerald-400 font-mono">￥{row.subtotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            <td className="px-3.5 py-2.5 text-right text-slate-300 font-mono">￥{formatMoney(row.principal)}</td>
+                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{formatMoney(row.interest)}</td>
+                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{formatMoney(row.compound)}</td>
+                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{formatMoney(row.delay)}</td>
+                            <td className="px-3.5 py-2.5 text-right font-bold text-emerald-400 font-mono">￥{formatMoney(row.subtotal)}</td>
                           </tr>
                         ))}
                       </tbody>
