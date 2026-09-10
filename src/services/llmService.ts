@@ -22,8 +22,8 @@ export const LLM_PRESETS: LLMPreset[] = [
     name: 'Google Gemini (官方兼容)',
     apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     apiVersion: 'v1beta',
-    model: 'gemini-1.5-flash',
-    description: 'Google 官方提供的 OpenAI 兼容接口（注：需在本地开启科学代理模式）',
+    model: 'gemini-3.8-flash',
+    description: 'Google 官方提供的 OpenAI 兼容接口（支持 3.8 flash 等最新模型）',
   },
   {
     id: 'openai',
@@ -286,7 +286,7 @@ export async function testLLMConnection(config: LLMConfig): Promise<{ success: b
         throw new Error(`认证失败 (HTTP ${response.status})：请检查 API Key 是否填写正确、有效或具有该模型权限。\n详情: ${errorDetail}`);
       }
       if (response.status === 404) {
-        throw new Error(`地址或模型未找到 (HTTP 404)：\n1. 请检查 API 调用完整地址是否包含 /openai/chat/completions；\n2. 确认模型名称标识是否匹配（推荐 gemini-1.5-flash）。\n详情: ${errorDetail}`);
+        throw new Error(`地址或模型未找到 (HTTP 404)：\n1. 请检查 API 调用完整地址是否包含 /openai/chat/completions；\n2. 确认模型名称标识是否与服务提供商后台完全一致。\n详情: ${errorDetail}`);
       }
       if (response.status === 429) {
         throw new Error(`请求受限 (HTTP 429)：账户额度已耗尽或触发限流频率控制。\n详情: ${errorDetail}`);
@@ -311,7 +311,7 @@ export async function testLLMConnection(config: LLMConfig): Promise<{ success: b
       const isGoogle = targetUrl.includes('googleapis.com');
       let customTips = '';
       if (isGoogle) {
-        customTips = `\n【针对 Google Gemini 专项排查】：\n1. 请确认本地代理工具已开启全局/系统代理；\n2. 完整 URL 需为：https://generativelanguage.googleapis.com/v1beta/openai/chat/completions\n3. 模型名称请使用官方标识 gemini-1.5-flash。`;
+        customTips = `\n【针对 Google Gemini 专项排查】：\n1. 请确认本地代理工具已开启系统/全局代理；\n2. 完整 URL 需包含 /openai/chat/completions。`;
       }
       throw new Error(`网络请求失败 (Failed to fetch)：\n请确认 API 地址可连通或本地代理正常。${customTips}`);
     }
@@ -504,7 +504,7 @@ export async function analyzeJudgmentWithLLM(
       const isGoogle = targetUrl.includes('googleapis.com');
       let customTips = '';
       if (isGoogle) {
-        customTips = `\n【针对 Google Gemini 专项排查】：\n1. 请确认本地代理工具已开启全局/系统代理；\n2. 完整 URL 需为：https://generativelanguage.googleapis.com/v1beta/openai/chat/completions\n3. 模型名称请使用官方标识 gemini-1.5-flash。`;
+        customTips = `\n【针对 Google Gemini 专项排查】：\n1. 请确认本地代理工具已开启系统/全局代理；\n2. 完整 URL 需包含 /openai/chat/completions。`;
       }
       throw new Error(`网络请求失败 (Failed to fetch)：\n请确认 API 地址可连通或本地代理正常。${customTips}`);
     }
