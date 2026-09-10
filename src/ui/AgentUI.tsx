@@ -6,7 +6,7 @@ import { extractTextFromPDF } from '../parser/pdfUtil';
 import { cleanDocumentText } from '../parser/textCleaner';
 import { exportToExcel } from '../core/exportUtil';
 import { LLMConfigModal } from './LLMConfigModal';
-import { LLMConfig, ParsedAnalysisResult } from '../services/llmTypes';
+import { LLMConfig, ParsedAnalysisResult, BatchCaseClient } from '../services/llmTypes';
 import { loadLLMConfig, analyzeJudgmentWithLLM } from '../services/llmService';
 import dayjs from 'dayjs';
 import { 
@@ -34,7 +34,12 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
-  Info
+  Info,
+  Users,
+  UserCheck,
+  Search,
+  Building2,
+  Layers
 } from 'lucide-react';
 
 const SAMPLE_JUDGMENT = `【民事判决书摘录（广东省高级人民法院典型金融借贷案例）】
@@ -53,6 +58,129 @@ const SAMPLE_JUDGMENT = `【民事判决书摘录（广东省高级人民法院�
 三、如果未按本判决指定的期间履行给付金钱义务，应当依照《中华人民共和国民事诉讼法》第二百六十四条之规定，加倍支付迟延履行期间的债务利息（日万分之一点七五）；
 四、被告赵某某、钱某某对上述债务承担连带清偿责任。`;
 
+const SAMPLE_BATCH_JUDGMENT = `【民事判决书摘录（深圳市福田区人民法院金融借款批量诉讼系列案）】
+案号：（2022）粤0304民初21154号等系列案
+原告：某某消费金融股份有限公司
+被告：谢添全、高俊胜、张立昕、钟良枢、朱乐冬、贺伟等借款人
+
+【裁判查明与认定事实】：
+原告某某消费金融公司与各被告在线分别签署《个人消费贷款授信合同》，约定贷款利率按借款发放日全国银行间同业拆借中心公布的1年期LPR执行并加收相应基点。借款人违约逾期的，自违约之日起按原借款执行利率的1.5倍加计逾期罚息；未按时支付的正常利息及罚息按前述罚息利率计收复利。
+原告向本院提起批量给付之诉。经本院审理查明各被告截至指定截息日的尚欠借款本金及利息罚息明细，并制定《附表一 原告诉讼请求附表》。
+
+附表一 原告诉讼请求附表 金额单位：元
+| 序号 | 案号 | 被告 | 性别 | 民族 | 身份证号码 | 身份证地址 | 本金余额 | 利息 | 罚息 | 复利 | 截息日期 | 案件受理费 | 保全费 |
+| 1 | (2022)粤0304民初21154号 | 谢添全 | 男 | 汉族 | 440981198803294918 | 广东省高州市东岸镇射坡大辟村30号 | 104869.00 | 0 | 17531.75 | 1379.15 | 2020-11-2 | 2775.60 | 1138.89 |
+| 2 | (2022)粤0304民初21157号 | 高俊胜 | 男 | 汉族 | 440106196609281897 | 广东省深圳市福田区国城花园2栋3107 | 300000.00 | 20338.27 | 28798.00 | 3976.47 | 2020-11-2 | 6596.70 | / |
+| 3 | (2022)粤0304民初21158号 | 张立昕 | 男 | 汉族 | 429001198501194835 | 湖北省随县小林镇小林店居委会十五组 | 68100.00 | 2264.29 | 5738.70 | 447.81 | 2020-11-2 | 1713.78 | 785.50 |
+| 4 | (2022)粤0304民初21160号 | 钟良枢 | 男 | 汉族 | 441424196808223294 | 广东省五华县岐岭镇龙水村松二 | 62300.00 | 4169.07 | 8020.02 | 1164.18 | 2020-11-2 | 1691.34 | / |
+| 5 | (2022)粤0304民初21164号 | 朱乐冬 | 男 | 汉族 | 420603197811081038 | 广东省深圳市罗湖区东门南路1021号阳光新干线家园A座903 | 130315.08 | 0 | 14931.64 | 817.01 | 2021-2-4 | 3221.28 | 1250.31 |
+| 6 | (2022)粤0304民初21165号 | 贺伟 | 男 | 汉族 | 413023198209086416 | 河南省信阳市浉河区董家河乡教育路318号 | 227800.00 | 6195.16 | 13357.46 | 783.81 | 2020-11-2 | 5022.04 | / |
+
+【判决主文】：
+一、各被告应于本判决生效之日起十日内向原告偿还附表一所列尚欠借款本金，并支付截至附表所列截息日期的利息、罚息及复利；
+二、各被告自附表所列截息日期次日起至实际清偿之日止，以本金余额为基数，按同期全国银行间同业拆借中心公布的1年期LPR加60个基点上浮50%计算逾期罚息，并按上述罚息利率计付复利；
+三、依照《中华人民共和国民事诉讼法》第二百六十四条之规定，加倍支付迟延履行期间的债务利息（日万分之一点七五）；
+四、各被告承担附表一所列诉讼费与保全费。`;
+
+export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
+  {
+    id: '1',
+    caseNo: '(2022)粤0304民初21154号',
+    defendant: '谢添全',
+    gender: '男',
+    nation: '汉族',
+    idCard: '440981198803294918',
+    idAddress: '广东省高州市东岸镇射坡大辟村30号',
+    principal: 104869.00,
+    baseInterest: 0,
+    basePenalty: 17531.75,
+    baseCompound: 1379.15,
+    cutoffDate: '2020-11-02',
+    litigationFee: 2775.60,
+    preservationFee: 1138.89,
+  },
+  {
+    id: '2',
+    caseNo: '(2022)粤0304民初21157号',
+    defendant: '高俊胜',
+    gender: '男',
+    nation: '汉族',
+    idCard: '440106196609281897',
+    idAddress: '广东省深圳市福田区国城花园2栋3107',
+    principal: 300000.00,
+    baseInterest: 20338.27,
+    basePenalty: 28798.00,
+    baseCompound: 3976.47,
+    cutoffDate: '2020-11-02',
+    litigationFee: 6596.70,
+    preservationFee: 0,
+  },
+  {
+    id: '3',
+    caseNo: '(2022)粤0304民初21158号',
+    defendant: '张立昕',
+    gender: '男',
+    nation: '汉族',
+    idCard: '429001198501194835',
+    idAddress: '湖北省随县小林镇小林店居委会十五组',
+    principal: 68100.00,
+    baseInterest: 2264.29,
+    basePenalty: 5738.70,
+    baseCompound: 447.81,
+    cutoffDate: '2020-11-02',
+    litigationFee: 1713.78,
+    preservationFee: 785.50,
+  },
+  {
+    id: '4',
+    caseNo: '(2022)粤0304民初21160号',
+    defendant: '钟良枢',
+    gender: '男',
+    nation: '汉族',
+    idCard: '441424196808223294',
+    idAddress: '广东省五华县岐岭镇龙水村松二',
+    principal: 62300.00,
+    baseInterest: 4169.07,
+    basePenalty: 8020.02,
+    baseCompound: 1164.18,
+    cutoffDate: '2020-11-02',
+    litigationFee: 1691.34,
+    preservationFee: 0,
+  },
+  {
+    id: '5',
+    caseNo: '(2022)粤0304民初21164号',
+    defendant: '朱乐冬',
+    gender: '男',
+    nation: '汉族',
+    idCard: '420603197811081038',
+    idAddress: '广东省深圳市罗湖区东门南路1021号阳光新干线家园A座903',
+    principal: 130315.08,
+    baseInterest: 0,
+    basePenalty: 14931.64,
+    baseCompound: 817.01,
+    cutoffDate: '2021-02-04',
+    litigationFee: 3221.28,
+    preservationFee: 1250.31,
+  },
+  {
+    id: '6',
+    caseNo: '(2022)粤0304民初21165号',
+    defendant: '贺伟',
+    gender: '男',
+    nation: '汉族',
+    idCard: '413023198209086416',
+    idAddress: '河南省信阳市浉河区董家河乡教育路318号',
+    principal: 227800.00,
+    baseInterest: 6195.16,
+    basePenalty: 13357.46,
+    baseCompound: 783.81,
+    cutoffDate: '2020-11-02',
+    litigationFee: 5022.04,
+    preservationFee: 0,
+  },
+];
+
 export const AgentUI: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'agent' | 'rates' | 'guide'>('agent');
   const [inputText, setInputText] = useState('');
@@ -70,10 +198,26 @@ export const AgentUI: React.FC = () => {
   const [showRawOutput, setShowRawOutput] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // 批量案件多客户选择与检索状态
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [clientSearchKeyword, setClientSearchKeyword] = useState<string>('');
+
   // 计算引擎状态
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [params, setParams] = useState<CalculationParams | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 客户列表实时过滤
+  const filteredClients = (analysisResult?.batchClients || []).filter(c => {
+    if (!clientSearchKeyword.trim()) return true;
+    const kw = clientSearchKeyword.trim().toLowerCase();
+    return (
+      c.defendant?.toLowerCase().includes(kw) ||
+      c.caseNo?.toLowerCase().includes(kw) ||
+      c.idCard?.toLowerCase().includes(kw) ||
+      c.id === kw
+    );
+  });
 
   // 初始化加载配置
   useEffect(() => {
@@ -127,11 +271,104 @@ export const AgentUI: React.FC = () => {
   };
 
   const loadSample = () => {
-    setUploadedFileName('粤民终1268号民事判决书_样本.pdf');
+    setUploadedFileName('粤民终1268号民事判决书_单一案件样本.pdf');
     setInputText(SAMPLE_JUDGMENT);
     setScannedWarning(false);
     setErrorMessage(null);
     setExtractStats(null);
+    setSelectedClientId(null);
+  };
+
+  // 载入典型的批量案件附表样例（深圳福田消金批量诉讼系列案）
+  const loadBatchSample = () => {
+    setUploadedFileName('深圳福田消金系列案_附表一原告诉讼请求附表.pdf');
+    setInputText(SAMPLE_BATCH_JUDGMENT);
+    setScannedWarning(false);
+    setErrorMessage(null);
+    setExtractStats(null);
+
+    // 预置解析状态
+    const firstClient = SAMPLE_BATCH_CLIENTS[0];
+    setSelectedClientId(firstClient.id);
+
+    const initialBatchParams: CalculationParams = {
+      baseDate: firstClient.cutoffDate || '2020-11-02',
+      endDate: dayjs().format('YYYY-MM-DD'),
+      principal: firstClient.principal,
+      baseInterest: firstClient.baseInterest,
+      basePenalty: firstClient.basePenalty,
+      rateMode: 'LPR',
+      lprTerm: '1Y',
+      lprBp: 60,
+      lprFloatRatio: 0,
+      penaltyMultiple: 1.5,
+      compoundMode: 'INT_AND_PENALTY',
+      delayInterestEnabled: true,
+    };
+
+    const mockAnalysis: ParsedAnalysisResult = {
+      params: initialBatchParams,
+      caseNo: firstClient.caseNo,
+      plaintiff: '某某消费金融股份有限公司',
+      defendant: `${firstClient.defendant} (附表第1位客户)`,
+      reasoning: '【批量案件司法审查结论】：本案系某某消费金融公司诉多名借款人的消费信贷批量系列案。判决以《附表一 原告诉讼请求附表》形式分别载明了各被告姓名、案号、身份证、尚欠本金及利息罚息。判令以各被告截至指定截息日（如2020-11-02）的本金为基数，按1年期LPR加60BP上浮50%计算罚复利至清偿日，并加倍支付迟延履行金。',
+      keyPoints: [
+        `共提取到附表内 ${SAMPLE_BATCH_CLIENTS.length} 位借款人清单（含谢添全、高俊胜、张立昕、钟良枢、朱乐冬、贺伟等）`,
+        '各借款人分别设立独立子案号，本金与暂计罚息独立测算',
+        '支持在下方【批量案件客户选择器】中自由点击切换指定客户进行独立清算与证据生成'
+      ],
+      isBatchCase: true,
+      batchClients: SAMPLE_BATCH_CLIENTS,
+      selectedClientId: firstClient.id,
+      rawOutput: JSON.stringify({
+        isBatchCase: true,
+        batchClients: SAMPLE_BATCH_CLIENTS,
+        note: '样例已自动组装 6 名客户附表明细'
+      }, null, 2),
+    };
+
+    setAnalysisResult(mockAnalysis);
+    setParams(initialBatchParams);
+
+    const calculator = new InterestCalculator();
+    const calcResult = calculator.calculate(initialBatchParams);
+    setResult(calcResult);
+  };
+
+  // 用户在批量列表中切换选定特定客户并立即重算
+  const handleSelectClient = (client: BatchCaseClient) => {
+    setSelectedClientId(client.id);
+
+    if (!analysisResult) return;
+
+    // 依据选定客户重构计算参数
+    const currentParams = params || analysisResult.params;
+    const updatedParams: CalculationParams = {
+      ...currentParams,
+      principal: client.principal,
+      baseInterest: client.baseInterest,
+      basePenalty: client.basePenalty,
+      baseDate: client.cutoffDate || currentParams.baseDate,
+    };
+
+    // 更新文书显示的原被告与案号
+    setAnalysisResult({
+      ...analysisResult,
+      caseNo: client.caseNo || analysisResult.caseNo,
+      defendant: `${client.defendant} (附表序号 ${client.id})`,
+      selectedClientId: client.id,
+    });
+
+    setParams(updatedParams);
+
+    // 立即执行确定性精算
+    try {
+      const calculator = new InterestCalculator();
+      const calcRes = calculator.calculate(updatedParams);
+      setResult(calcRes);
+    } catch (err) {
+      console.error('切换客户重算异常:', err);
+    }
   };
 
   // Agent 核心触发逻辑：调用真实大模型接口
@@ -157,6 +394,13 @@ export const AgentUI: React.FC = () => {
 
       setAnalysisResult(parsedData);
       setParams(parsedData.params);
+
+      // 若识别出批量客户，默认选中第 1 位客户
+      if (parsedData.batchClients && parsedData.batchClients.length > 0) {
+        setSelectedClientId(parsedData.batchClients[0].id);
+      } else {
+        setSelectedClientId(null);
+      }
 
       // 2. 调度确定性高精算法进行清算
       const calculator = new InterestCalculator();
@@ -331,12 +575,21 @@ export const AgentUI: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={loadSample}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-blue-950 text-blue-300 border border-blue-700/50 hover:bg-blue-900/60 transition-all shadow-sm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-all shadow-sm"
+                    title="载入普通单一案件判决书示例"
                   >
-                    <FileText className="w-3.5 h-3.5 text-blue-400" /> 一键载入真实判决样例
+                    <FileText className="w-3.5 h-3.5 text-blue-400" /> 单一案件样例
+                  </button>
+
+                  <button
+                    onClick={loadBatchSample}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-950 text-blue-300 border border-blue-700/60 hover:bg-blue-900/80 transition-all shadow-sm"
+                    title="载入包含《原告诉讼请求附表》的批量案件裁判文书示例（含多位借款人）"
+                  >
+                    <Layers className="w-3.5 h-3.5 text-indigo-400" /> 载入批量案件附表样例 (消金系列案)
                   </button>
 
                   <input
@@ -528,6 +781,142 @@ export const AgentUI: React.FC = () => {
                   </div>
                 )}
 
+                {/* 批量案件客户附表明细与靶向选择器（供用户按需挑选特定客户计算） */}
+                {analysisResult.batchClients && analysisResult.batchClients.length > 0 && (
+                  <div className="pt-4 border-t border-slate-800 space-y-3">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-white flex items-center gap-2">
+                          <Users className="w-4 h-4 text-blue-400" />
+                          <span>批量案件借款人客户附表明细与靶向选择器</span>
+                          <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-900/50 text-blue-300 border border-blue-700/50 font-mono">
+                            共识别到 {analysisResult.batchClients.length} 位客户
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400 mt-1">
+                          系统当前正在清算客户：
+                          <span className="text-amber-300 font-bold ml-1 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/60">
+                            {analysisResult.batchClients.find(c => c.id === selectedClientId)?.defendant || analysisResult.defendant}
+                          </span>
+                          <span className="text-slate-400 ml-2 font-mono">
+                            (案号: {analysisResult.batchClients.find(c => c.id === selectedClientId)?.caseNo || analysisResult.caseNo})
+                          </span>
+                          <span className="text-slate-500 ml-2 text-[11px]">点击任一客户即可一键切换精准清算与生成质证清单</span>
+                        </div>
+                      </div>
+
+                      {/* 快捷搜索过滤 */}
+                      <div className="relative w-full sm:w-64">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={clientSearchKeyword}
+                          onChange={(e) => setClientSearchKeyword(e.target.value)}
+                          placeholder="搜索姓名、身份证、案号..."
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-sans"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 客户列表表格 */}
+                    <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80 max-h-80 overflow-y-auto shadow-inner">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-900/95 text-slate-400 border-b border-slate-800 text-[11px] sticky top-0 z-10 backdrop-blur-sm">
+                          <tr>
+                            <th className="px-3.5 py-2.5 text-center">状态</th>
+                            <th className="px-3.5 py-2.5">序号</th>
+                            <th className="px-3.5 py-2.5">对应子案号</th>
+                            <th className="px-3.5 py-2.5">被告姓名</th>
+                            <th className="px-3.5 py-2.5">身份证号码</th>
+                            <th className="px-3.5 py-2.5">身份证地址</th>
+                            <th className="px-3.5 py-2.5 text-right">尚欠本金 (元)</th>
+                            <th className="px-3.5 py-2.5 text-right">暂计利息</th>
+                            <th className="px-3.5 py-2.5 text-right">暂计罚息</th>
+                            <th className="px-3.5 py-2.5 text-right">暂计复利</th>
+                            <th className="px-3.5 py-2.5">截息日期</th>
+                            <th className="px-3.5 py-2.5 text-right">受理费 / 保全费</th>
+                            <th className="px-3.5 py-2.5 text-center">靶向操作</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60">
+                          {filteredClients.map((client) => {
+                            const isSelected = selectedClientId === client.id;
+                            return (
+                              <tr
+                                key={client.id}
+                                onClick={() => handleSelectClient(client)}
+                                className={`cursor-pointer transition-colors ${
+                                  isSelected
+                                    ? 'bg-blue-950/60 text-white font-medium border-l-4 border-blue-500'
+                                    : 'hover:bg-slate-900/70 text-slate-300'
+                                }`}
+                              >
+                                <td className="px-3.5 py-2.5 text-center">
+                                  {isSelected ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white shadow-sm shadow-blue-500/30">
+                                      <UserCheck className="w-3 h-3" /> 清算中
+                                    </span>
+                                  ) : (
+                                    <span className="w-2 h-2 rounded-full bg-slate-700 inline-block"></span>
+                                  )}
+                                </td>
+                                <td className="px-3.5 py-2.5 font-mono text-slate-400">{client.id}</td>
+                                <td className="px-3.5 py-2.5 font-mono text-xs text-blue-300 whitespace-nowrap">
+                                  {client.caseNo || '-'}
+                                </td>
+                                <td className="px-3.5 py-2.5 font-bold text-white whitespace-nowrap">
+                                  {client.defendant}
+                                  {client.gender && <span className="ml-1 text-[11px] font-normal text-slate-400">({client.gender})</span>}
+                                </td>
+                                <td className="px-3.5 py-2.5 font-mono text-xs text-slate-300 whitespace-nowrap">
+                                  {client.idCard || '-'}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-slate-400 text-xs max-w-[150px] truncate" title={client.idAddress}>
+                                  {client.idAddress || '-'}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
+                                  ￥{client.principal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right font-mono text-slate-300 whitespace-nowrap">
+                                  ￥{client.baseInterest.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right font-mono text-amber-400 whitespace-nowrap">
+                                  ￥{client.basePenalty.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right font-mono text-purple-400 whitespace-nowrap">
+                                  ￥{(client.baseCompound || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-3.5 py-2.5 font-mono text-xs text-slate-300 whitespace-nowrap">
+                                  {client.cutoffDate || '-'}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-right font-mono text-xs text-slate-400 whitespace-nowrap">
+                                  {client.litigationFee ? `￥${client.litigationFee}` : '-'}{client.preservationFee ? ` / ￥${client.preservationFee}` : ''}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-center whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSelectClient(client);
+                                    }}
+                                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                                      isSelected
+                                        ? 'bg-blue-600 text-white shadow'
+                                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                                    }`}
+                                  >
+                                    {isSelected ? '✓ 正在清算' : '🎯 选定清算'}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 {/* 人机协同微调表单 */}
                 {params && (
                   <div className="pt-3 border-t border-slate-800 space-y-3">
@@ -687,7 +1076,11 @@ export const AgentUI: React.FC = () => {
                   </div>
 
                   <button
-                    onClick={() => exportToExcel(result)}
+                    onClick={() => exportToExcel(result, {
+                      caseNo: analysisResult?.caseNo,
+                      defendant: analysisResult?.defendant,
+                      plaintiff: analysisResult?.plaintiff,
+                    })}
                     className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
                   >
                     <Download className="w-4 h-4" /> 导出“法院蓝”制式 Excel 证据清单
