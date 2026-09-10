@@ -1,5 +1,6 @@
 import { CalculationParams } from '../core/types';
-import { LLMConfig, LLMPreset, ParsedAnalysisResult, BatchCaseClient } from './llmTypes';
+import { roundToFen } from '../core/calculator';
+import { LLMConfig, ParsedAnalysisResult, BatchCaseClient } from './llmTypes';
 import { JUDGMENT_PARSER_PROMPT } from '../parser/prompt';
 import dayjs from 'dayjs';
 
@@ -381,13 +382,13 @@ export function extractJSONFromLLMOutput(rawText: string): any {
 function normalizeExtractedParams(rawJson: any): { params: CalculationParams; extra: Partial<ParsedAnalysisResult> } {
   const today = dayjs().format('YYYY-MM-DD');
 
-  // 核心参数校验与回退
+  // 核心参数校验与回退（所有金额统一精确到分位）
   const params: CalculationParams = {
     baseDate: typeof rawJson.baseDate === 'string' && rawJson.baseDate.length >= 8 ? rawJson.baseDate : today,
     endDate: today,
-    principal: Number(rawJson.principal) || 0,
-    baseInterest: Number(rawJson.baseInterest) || 0,
-    basePenalty: Number(rawJson.basePenalty) || 0,
+    principal: roundToFen(Number(rawJson.principal) || 0),
+    baseInterest: roundToFen(Number(rawJson.baseInterest) || 0),
+    basePenalty: roundToFen(Number(rawJson.basePenalty) || 0),
     rateMode: ['LPR', 'BENCHMARK', 'FIXED'].includes(rawJson.rateMode) ? rawJson.rateMode : 'LPR',
     lprTerm: rawJson.lprTerm === '1Y' ? '1Y' : '5Y',
     lprBp: Number(rawJson.lprBp) || 0,
@@ -411,13 +412,13 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
     nation: c.nation,
     idCard: c.idCard,
     idAddress: c.idAddress,
-    principal: Number(c.principal) || 0,
-    baseInterest: Number(c.baseInterest) || 0,
-    basePenalty: Number(c.basePenalty) || 0,
-    baseCompound: Number(c.baseCompound) || 0,
+    principal: roundToFen(Number(c.principal) || 0),
+    baseInterest: roundToFen(Number(c.baseInterest) || 0),
+    basePenalty: roundToFen(Number(c.basePenalty) || 0),
+    baseCompound: roundToFen(Number(c.baseCompound) || 0),
     cutoffDate: typeof c.cutoffDate === 'string' && c.cutoffDate.length >= 8 ? c.cutoffDate : (rawJson.baseDate || today),
-    litigationFee: Number(c.litigationFee) || 0,
-    preservationFee: Number(c.preservationFee) || 0,
+    litigationFee: roundToFen(Number(c.litigationFee) || 0),
+    preservationFee: roundToFen(Number(c.preservationFee) || 0),
     notes: c.notes,
   }));
 
