@@ -1107,59 +1107,59 @@ export const AgentUI: React.FC = () => {
                 </div>
 
                 {/* 6 大核心清算汇总指标大屏 */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-                      <span>清算跨期天数</span>
-                      <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 md:gap-3">
+                  <div className="p-3 md:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-slate-400 text-[11px] font-medium">
+                      <span className="truncate">清算跨期天数</span>
+                      <Calendar className="w-3 h-3 text-blue-400 flex-shrink-0" />
                     </div>
-                    <div className="text-xl font-bold text-white">{result.totalDays} <span className="text-xs font-normal text-slate-400">天</span></div>
-                    <div className="text-[11px] text-slate-500">实际天数 / 360</div>
+                    <div className="text-base md:text-xl font-bold text-white">{result.totalDays} <span className="text-[11px] font-normal text-slate-400">天</span></div>
+                    <div className="text-[10px] md:text-[11px] text-slate-500">实际天数 / 360</div>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-                      <span>基准日本金余额</span>
-                      <DollarSign className="w-3.5 h-3.5 text-slate-400" />
+                  <div className="p-3 md:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-slate-400 text-[11px] font-medium">
+                      <span className="truncate">基准日本金余额</span>
+                      <DollarSign className="w-3 h-3 text-slate-400 flex-shrink-0" />
                     </div>
-                    <div className="text-xl font-bold text-slate-200">￥{formatMoney(result.principal)}</div>
-                    <div className="text-[11px] text-slate-500">判决固定本金</div>
+                    <div className="text-base md:text-xl font-bold text-slate-200 truncate">￥{formatMoney(result.principal)}</div>
+                    <div className="text-[10px] md:text-[11px] text-slate-500">判决固定本金</div>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between text-amber-400/90 text-xs font-medium">
-                      <span>新发生利息/罚息</span>
-                      <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
+                  <div className="p-3 md:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-amber-400/90 text-[11px] font-medium">
+                      <span className="truncate">新发生利息/罚息</span>
+                      <TrendingUp className="w-3 h-3 text-amber-400 flex-shrink-0" />
                     </div>
-                    <div className="text-xl font-bold text-amber-400">￥{formatMoney(result.newPenalty)}</div>
-                    <div className="text-[11px] text-slate-500">分段浮动累加</div>
+                    <div className="text-base md:text-xl font-bold text-amber-400 truncate">￥{formatMoney(result.newPenalty)}</div>
+                    <div className="text-[10px] md:text-[11px] text-slate-500">分段浮动累加</div>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between text-amber-400/90 text-xs font-medium">
-                      <span>新发生复利</span>
-                      <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
+                  <div className="p-3 md:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-amber-400/90 text-[11px] font-medium">
+                      <span className="truncate">新发生复利</span>
+                      <TrendingUp className="w-3 h-3 text-amber-400 flex-shrink-0" />
                     </div>
-                    <div className="text-xl font-bold text-amber-400">￥{formatMoney(result.newCompound)}</div>
-                    <div className="text-[11px] text-slate-500">滚动欠息复利</div>
+                    <div className="text-base md:text-xl font-bold text-amber-400 truncate">￥{formatMoney(result.newCompound)}</div>
+                    <div className="text-[10px] md:text-[11px] text-slate-500">滚动欠息复利</div>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
-                    <div className="flex items-center justify-between text-indigo-400 text-xs font-medium">
-                      <span>迟延履行加倍金</span>
-                      <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                  <div className="p-3 md:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between text-indigo-400 text-[11px] font-medium">
+                      <span className="truncate">迟延履行加倍金</span>
+                      <Clock className="w-3 h-3 text-indigo-400 flex-shrink-0" />
                     </div>
-                    <div className="text-xl font-bold text-indigo-400">￥{formatMoney(result.delayInterest)}</div>
-                    <div className="text-[11px] text-slate-500">日万分之 1.75</div>
+                    <div className="text-base md:text-xl font-bold text-indigo-400 truncate">￥{formatMoney(result.delayInterest)}</div>
+                    <div className="text-[10px] md:text-[11px] text-slate-500">日万分之 1.75</div>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-gradient-to-br from-red-950/60 to-red-900/40 border border-red-700/50 space-y-1">
-                    <div className="flex items-center justify-between text-red-300 text-xs font-bold">
-                      <span>债权本息合计总额</span>
-                      <ShieldCheck className="w-4 h-4 text-red-400" />
+                  <div className="p-3 md:p-4 rounded-xl bg-gradient-to-br from-red-950/60 to-red-900/40 border border-red-700/50 space-y-1">
+                    <div className="flex items-center justify-between text-red-300 text-[11px] font-bold">
+                      <span className="truncate">债权本息合计总额</span>
+                      <ShieldCheck className="w-3 h-3 md:w-4 md:h-4 text-red-400 flex-shrink-0" />
                     </div>
-                    <div className="text-2xl font-black text-red-400">￥{formatMoney(result.totalDebt)}</div>
-                    <div className="text-[11px] text-red-300/80">包含基准日前未清款</div>
+                    <div className="text-lg md:text-2xl font-black text-red-400 truncate">￥{formatMoney(result.totalDebt)}</div>
+                    <div className="text-[10px] md:text-[11px] text-red-300/80">包含基准日前未清款</div>
                   </div>
                 </div>
 
