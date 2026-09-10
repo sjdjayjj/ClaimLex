@@ -36,6 +36,42 @@ export interface LLMConfig {
 }
 
 /**
+ * 批量案件中的单个借款人/被告客户要素明细
+ */
+export interface BatchCaseClient {
+  /** 序号或唯一索引 */
+  id: string;
+  /** 该客户对应的具体子案号 (例如 (2022)粤0304民初21154号) */
+  caseNo?: string;
+  /** 被告姓名 (例如 谢添全) */
+  defendant: string;
+  /** 性别 */
+  gender?: string;
+  /** 民族 */
+  nation?: string;
+  /** 身份证号码 */
+  idCard?: string;
+  /** 身份证地址 */
+  idAddress?: string;
+  /** 欠款本金余额 (元) */
+  principal: number;
+  /** 暂计利息 (元) */
+  baseInterest: number;
+  /** 暂计罚息 (元) */
+  basePenalty: number;
+  /** 暂计复利 (元) */
+  baseCompound?: number;
+  /** 截息日期 (YYYY-MM-DD，以此日期为起算点) */
+  cutoffDate?: string;
+  /** 案件受理费 (元) */
+  litigationFee?: number;
+  /** 保全费 (元) */
+  preservationFee?: number;
+  /** 备注 */
+  notes?: string;
+}
+
+/**
  * 结构化文书解析产物（包含参数与司法论证）
  */
 export interface ParsedAnalysisResult {
@@ -53,6 +89,12 @@ export interface ParsedAnalysisResult {
   keyPoints?: string[];
   /** 大模型原始输出文本 (用于回溯与审计) */
   rawOutput?: string;
+  /** 是否为批量案件/附表判决 */
+  isBatchCase?: boolean;
+  /** 批量案件借款人客户列表 (附表中抽取的客户明细) */
+  batchClients?: BatchCaseClient[];
+  /** 当前选中的客户 ID */
+  selectedClientId?: string;
 }
 
 /**
