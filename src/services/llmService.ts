@@ -185,22 +185,34 @@ async function dispatchApiRequest(
   signal: AbortSignal,
   useLocalProxy: boolean
 ): Promise<Response> {
-  // 1. 如果启用了本地开发代理，直接路由至本地中间件，避免浏览器 CORS 拦截
+  // 1. 如果启用了代理，尝试通过 /api/llm-proxy 转发
   if (useLocalProxy) {
     try {
       const proxyHeaders = {
         ...headers,
         'x-target-url': targetUrl,
       };
-      return await fetch('/api/llm-proxy', {
+      const proxyRes = await fetch('/api/llm-proxy', {
         method,
         headers: proxyHeaders,
         body: JSON.stringify(bodyJson),
         signal,
       });
+
+      // 若当前部署环境（如纯静态托管）不支持该路由返回 404 或 405，自动降级直连
+      if (proxyRes.status === 404 || proxyRes.status === 405) {
+        console.warn(`代理端点返回 HTTP ${proxyRes.status}，自动降级直连目标 API`);
+        return await fetch(targetUrl, {
+          method,
+          headers,
+          body: JSON.stringify(bodyJson),
+          signal,
+        });
+      }
+
+      return proxyRes;
     } catch (proxyError: any) {
-      // 若代理未启动（如纯静态托管部署），降级尝试直接请求
-      console.warn('本地代理请求未响应，降级尝试直连:', proxyError.message);
+      console.warn('代理请求异常，降级尝试直连:', proxyError.message);
     }
   }
 
@@ -213,19 +225,22 @@ async function dispatchApiRequest(
       signal,
     });
   } catch (directError: any) {
-    // 3. 如果直连出现 Failed to fetch (典型的跨域 CORS 拦截或域名拒绝)，且前面没走代理，则自动尝试通过本地代理救急
-    if (directError.message?.includes('Failed to fetch') && !useLocalProxy) {
-      console.info('直连触发 Failed to fetch，自动启用本地代理重试...');
+    // 3. 如果直连出现 Failed to fetch (典型的跨域 CORS 拦截)，尝试通过代理救急
+    if (directError.message?.includes('Failed to fetch')) {
+      console.info('直连触发 Failed to fetch，尝试通过代理转发重试...');
       const proxyHeaders = {
         ...headers,
         'x-target-url': targetUrl,
       };
-      return await fetch('/api/llm-proxy', {
+      const fallbackRes = await fetch('/api/llm-proxy', {
         method,
         headers: proxyHeaders,
         body: JSON.stringify(bodyJson),
         signal,
       });
+      if (fallbackRes.status !== 404 && fallbackRes.status !== 405) {
+        return fallbackRes;
+      }
     }
     throw directError;
   }
