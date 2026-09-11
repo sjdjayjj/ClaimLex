@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { CalculationResult, RepaymentRecord } from './types';
 
-export function exportToExcel(result: CalculationResult, meta?: { caseNo?: string; defendant?: string; plaintiff?: string; repayments?: RepaymentRecord[] }) {
+export function exportToExcel(result: CalculationResult, meta?: { caseNo?: string; defendant?: string; plaintiff?: string; repayments?: RepaymentRecord[]; executionDueDate?: string }) {
   const title = meta?.caseNo ? `债权本息测算报告（${meta.caseNo}）` : '债权本息测算报告';
   
   const summaryData = [
@@ -12,7 +12,7 @@ export function exportToExcel(result: CalculationResult, meta?: { caseNo?: strin
     ['基准日本金余额', Number(result.principal.toFixed(2)), '最新剩余计息本金', ''],
     ['新发生利息/罚息', Number(result.newPenalty.toFixed(2)), '按浮动/固定利率计付', ''],
     ['新发生复利', Number(result.newCompound.toFixed(2)), '滚动按月计收复利', ''],
-    ['加倍迟延履行金', Number(result.delayInterest.toFixed(2)), '依照民诉法日万分之一点七五', ''],
+    ['加倍迟延履行金', Number(result.delayInterest.toFixed(2)), meta?.executionDueDate ? `自届满日(${meta.executionDueDate})起算(日万分之1.75)` : '依照民诉法日万分之一点七五', ''],
     ['应计债权总额(未扣还款)', Number(result.totalDebt.toFixed(2)), '本金+各衍生息费总额', ''],
     ['判决后已冲减还款总额', Number((result.totalRepaid || 0).toFixed(2)), '选定参与算息的银行扣款还款', ''],
     ['扣减还款后结欠债权净额', Number(((result.netDebt !== undefined ? result.netDebt : result.totalDebt)).toFixed(2)), '最终应清偿/申请执行金额', ''],
