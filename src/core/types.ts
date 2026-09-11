@@ -69,6 +69,8 @@ export interface CalculationParams {
   penaltyMultiple: number;
   compoundMode: CompoundMode;
   delayInterestEnabled: boolean;
+  /** 履行期届满日（YYYY-MM-DD，生效法律文书履行期届满之日起算加倍迟延履行金，依据送达回证手工填入） */
+  executionDueDate?: string;
   /** 参与算息的银行还款/扣款流水记录列表 */
   repayments?: RepaymentRecord[];
 }
