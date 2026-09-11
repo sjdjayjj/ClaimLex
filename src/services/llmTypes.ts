@@ -1,4 +1,4 @@
-import { CalculationParams } from '../core/types';
+import { CalculationParams, RepaymentRecord, RepaymentReceiptMeta } from '../core/types';
 
 /**
  * 自定义请求头键值对
@@ -95,6 +95,10 @@ export interface ParsedAnalysisResult {
   batchClients?: BatchCaseClient[];
   /** 当前选中的客户 ID */
   selectedClientId?: string;
+  /** 提取到的银行扣款回单基本信息 */
+  receiptMeta?: RepaymentReceiptMeta;
+  /** 提取到的扣款明细 / 还款流水记录列表 */
+  repayments?: RepaymentRecord[];
 }
 
 /**
