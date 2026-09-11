@@ -2,47 +2,13 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231e3a8a'><path d='M12 2L1 21h22L12 2zm0 3.5l8.5 14.5H3.5L12 5.5z'/></svg>" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>金融借贷纠纷智能裁判与债权清算助理 - AI Agent 驱动</title>
-    <!-- 引入 Tailwind CDN 保障现代样式毫秒级完整渲染 -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              brand: {
-                50: '#f0f5ff',
-                100: '#e0ebff',
-                500: '#2563eb',
-                600: '#1d4ed8',
-                700: '#1e40af',
-                800: '#1e3a8a',
-                900: '#0f172a',
-              },
-              court: {
-                navy: '#0b192c',
-                blue: '#1e3e62',
-                accent: '#f97316',
-                gold: '#d97706',
-              }
-            }
-          }
-        }
-      }
-    </script>
-    <style>
-      @keyframes pulse-slow {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.4; }
-      }
-      .animate-pulse-slow {
-        animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-      }
-    </style>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23b94f4a'><path d='M12 3c-1.1 0-2 .9-2 2h4c0-1.1-.9-2-2-2zm6 16v-2H6v2H4v-2h1V9c0-3.31 2.69-6 6-6 .7 0 1.37.12 2 .34V3h2c0 1.66-1.34 3-3 3-.34 0-.67-.06-.97-.16C9.05 6.79 7 9.18 7 12v5h11v-2h1v2h-2zM8 13c0 2.21 1.79 4 4 4s4-1.79 4-4H8z'/></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#b94f4a" />
+    <meta name="description" content="基于大模型 Agent 的金融借贷纠纷智能裁判与债权清算助理" />
+    <title>金融司法裁判智能解纷系统 · ClaimLex</title>
   </head>
-  <body class="bg-slate-900 text-slate-100 min-h-screen antialiased selection:bg-blue-500 selection:text-white">
+  <body class="min-h-screen antialiased selection:bg-primary/15 selection:text-primary">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

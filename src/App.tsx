@@ -3,7 +3,7 @@ import { AgentUI } from './ui/AgentUI';
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-background text-foreground font-sans">
       <AgentUI />
     </div>
   );
