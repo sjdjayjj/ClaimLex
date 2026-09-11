@@ -9,6 +9,10 @@ export const JUDGMENT_PARSER_PROMPT = `
 3. 顶层的 "principal"、"baseInterest"、"basePenalty"、"baseDate"、"caseNo"、"defendant" 先默认填入附表中第 1 位客户的对应数值，供系统先期测算。
 如果文书只是单一案件，则 "isBatchCase" 设为 false，"batchClients" 为空数组 []。
 
+【特别重点：银行扣款明细与还款流水】：
+若文书中包含《个人贷款扣款回单》或还款明细清单（含交易流水号、扣款日期、归还本金、归还利息、归还罚息、归还复利、还款总额）：
+请在 "repayments" 数组中提取每一笔还款记录，以便后续在算息中参与本金冲减与动态计息。若无则输出空数组 []。
+
 请严格仅输出一个纯 JSON 对象（不要使用任何开场白或多余解释，直接输出 JSON 或放在 \`\`\`json 块中），数据结构必须严格包含以下字段：
 
 {
@@ -44,6 +48,17 @@ export const JUDGMENT_PARSER_PROMPT = `
       "cutoffDate": "2020-11-02", // 截息日期 (YYYY-MM-DD)
       "litigationFee": 2775.60, // 案件受理费 (元)
       "preservationFee": 1138.89 // 保全费 (元)
+    }
+  ],
+  "repayments": [
+    {
+      "serialNo": "BAT00030870602", // 交易流水号
+      "date": "2019-12-21", // 扣款日期 YYYY-MM-DD
+      "principal": 0.00, // 归还本金 (元)
+      "interest": 0.00, // 归还利息 (元)
+      "penalty": 1.51, // 归还罚息 (元)
+      "compound": 0.00, // 归还复利 (元)
+      "totalAmount": 1.51 // 还款总额 (元)
     }
   ],
   "reasoning": "详细的司法逻辑推理阐述：说明基准日确定依据、批量客户附表分布规律、适用的调息与罚息复利条款",
