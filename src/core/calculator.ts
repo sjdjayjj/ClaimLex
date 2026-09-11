@@ -61,6 +61,7 @@ export class InterestCalculator {
       penaltyMultiple,
       compoundMode,
       delayInterestEnabled,
+      executionDueDate,
       repayments
     } = params;
 
@@ -75,7 +76,7 @@ export class InterestCalculator {
       (dayjs(r.date).isBefore(dayjs(endDate)) || dayjs(r.date).isSame(dayjs(endDate)))
     );
 
-    // 整理分段切分节点（含利率调整日与借款人还款日）
+    // 整理分段切分节点（含利率调整日、借款人还款日及履行期届满日）
     const dateCutPoints = new Set<string>([baseDate, endDate]);
     RATE_HISTORY.forEach(r => {
       if (dayjs(r.date).isAfter(dayjs(baseDate)) && dayjs(r.date).isBefore(dayjs(endDate))) {
@@ -88,6 +89,11 @@ export class InterestCalculator {
     activeRepayments.forEach(r => {
       dateCutPoints.add(r.date);
     });
+
+    // 注入履行期届满日切分（确保加倍迟延履行金精确从届满日起算）
+    if (executionDueDate && dayjs(executionDueDate).isAfter(dayjs(baseDate)) && dayjs(executionDueDate).isBefore(dayjs(endDate))) {
+      dateCutPoints.add(executionDueDate);
+    }
 
     const sortedDates = Array.from(dateCutPoints).sort();
     const intervals: CalculationInterval[] = [];
@@ -139,8 +145,14 @@ export class InterestCalculator {
         eventDesc = `扣款流水抵扣 (归还本金￥${roundToFen(rep.principal).toFixed(2)})`;
       } else if (i === 0) {
         eventDesc = '期初确认';
+      } else if (executionDueDate && start === executionDueDate) {
+        eventDesc = '履行期届满 (加倍金起算)';
       } else {
         eventDesc = '利率分段调整';
+      }
+
+      if (executionDueDate && start === executionDueDate && !eventDesc.includes('履行期届满')) {
+        eventDesc += ' · 履行期届满';
       }
 
       // 1. 获取该段基准利率
@@ -171,11 +183,20 @@ export class InterestCalculator {
         periodCompound = roundToFen(compoundBase * (penaltyRate / 100) * (days / 360));
       }
 
-      // 6. 迟延履行金计算：法定每日万分之1.75，按冲减后本金与基础利息
+      // 6. 迟延履行金计算：法定每日万分之1.75
+      // 依司法解释：加倍部分债务利息自生效法律文书确定的履行期间届满之日起计算
       let periodDelay = 0;
       if (delayInterestEnabled) {
-        const executionBase = currentPrincipal + baseInterest + basePenalty;
-        periodDelay = roundToFen(executionBase * 0.000175 * days);
+        let isDelayEffective = true;
+        if (executionDueDate) {
+          // 若设置了履行期届满日，尚未届满的分段不计收迟延履行金
+          isDelayEffective = dayjs(start).isAfter(dayjs(executionDueDate)) || dayjs(start).isSame(dayjs(executionDueDate));
+        }
+
+        if (isDelayEffective) {
+          const executionBase = currentPrincipal + baseInterest + basePenalty;
+          periodDelay = roundToFen(executionBase * 0.000175 * days);
+        }
       }
 
       const subtotal = roundToFen(periodPenalty + periodCompound + periodDelay);
