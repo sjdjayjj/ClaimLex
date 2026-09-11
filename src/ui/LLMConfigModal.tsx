@@ -144,7 +144,7 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({
 
   return (
     <div
-n      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-foreground/30 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-foreground/30 backdrop-blur-sm animate-fade-in"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto smartisan-scroll bg-popover border border-border rounded-lg shadow-smartisan-3 text-popover-foreground flex flex-col">
