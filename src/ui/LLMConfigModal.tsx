@@ -475,7 +475,7 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({
                 testResult.success
                   ? 'bg-state-success/10 border-state-success/30 text-state-success'
                   : 'bg-state-error/10 border-state-error/30 text-state-error'
-              `}
+              }`}
             >
               {testResult.success ? (
                 <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
