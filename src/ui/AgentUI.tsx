@@ -94,6 +94,30 @@ const SAMPLE_BATCH_JUDGMENT = `【民事判决书摘录（深圳市福田区人�
 export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   {
     id: '1',
+    caseNo: '(2023)粤0304民初16637号',
+    defendant: '秦世英',
+    gender: '女',
+    nation: '汉族',
+    idCard: '3****************2',
+    idAddress: '广东省深圳市南山区',
+    principal: 147321.69,
+    baseInterest: 0,
+    basePenalty: 51301.75,
+    baseCompound: 0,
+    cutoffDate: '2023-06-20',
+    executionDueDate: '2024-03-28',
+    rateMode: 'FIXED',
+    annualRate: 7.18,
+    fixedRate: 7.18,
+    penaltyMultiple: 1.5,
+    penaltyRate: 10.77,
+    dayCountConvention: '30_360',
+    litigationFee: 3529.56,
+    preservationFee: 1327.38,
+    notes: '对应图一律师计算明细表标准案件：合同执行年利率7.18%，罚息利率10.77%，30/360计息规则',
+  },
+  {
+    id: '2',
     caseNo: '(2022)粤0304民初21154号',
     defendant: '谢添全',
     gender: '男',
@@ -105,11 +129,16 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
     basePenalty: 17531.75,
     baseCompound: 1379.15,
     cutoffDate: '2020-11-02',
+    rateMode: 'LPR',
+    lprTerm: '1Y',
+    lprBp: 60,
+    penaltyMultiple: 1.5,
     litigationFee: 2775.60,
     preservationFee: 1138.89,
+    notes: '1年期LPR+60BP浮动调息，上浮50%',
   },
   {
-    id: '2',
+    id: '3',
     caseNo: '(2022)粤0304民初21157号',
     defendant: '高俊胜',
     gender: '男',
@@ -121,11 +150,17 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
     basePenalty: 28798.00,
     baseCompound: 3976.47,
     cutoffDate: '2020-11-02',
+    rateMode: 'FIXED',
+    annualRate: 8.50,
+    fixedRate: 8.50,
+    penaltyMultiple: 1.5,
+    penaltyRate: 12.75,
     litigationFee: 6596.70,
     preservationFee: 0,
+    notes: '合同固定年利率8.50%，罚息12.75%',
   },
   {
-    id: '3',
+    id: '4',
     caseNo: '(2022)粤0304民初21158号',
     defendant: '张立昕',
     gender: '男',
@@ -137,11 +172,17 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
     basePenalty: 5738.70,
     baseCompound: 447.81,
     cutoffDate: '2020-11-02',
+    rateMode: 'FIXED',
+    annualRate: 6.80,
+    fixedRate: 6.80,
+    penaltyMultiple: 1.3,
+    penaltyRate: 8.84,
     litigationFee: 1713.78,
     preservationFee: 785.50,
+    notes: '固定年利率6.80%，罚息上浮30%',
   },
   {
-    id: '4',
+    id: '5',
     caseNo: '(2022)粤0304民初21160号',
     defendant: '钟良枢',
     gender: '男',
@@ -153,11 +194,16 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
     basePenalty: 8020.02,
     baseCompound: 1164.18,
     cutoffDate: '2020-11-02',
+    rateMode: 'LPR',
+    lprTerm: '5Y',
+    lprBp: 50,
+    penaltyMultiple: 1.5,
     litigationFee: 1691.34,
     preservationFee: 0,
+    notes: '5年期以上LPR+50BP，上浮50%',
   },
   {
-    id: '5',
+    id: '6',
     caseNo: '(2022)粤0304民初21164号',
     defendant: '朱乐冬',
     gender: '男',
@@ -169,11 +215,17 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
     basePenalty: 14931.64,
     baseCompound: 817.01,
     cutoffDate: '2021-02-04',
+    rateMode: 'FIXED',
+    annualRate: 9.60,
+    fixedRate: 9.60,
+    penaltyMultiple: 1.5,
+    penaltyRate: 14.40,
     litigationFee: 3221.28,
     preservationFee: 1250.31,
+    notes: '固定年利率9.60%，罚息14.40%',
   },
   {
-    id: '6',
+    id: '7',
     caseNo: '(2022)粤0304民初21159号',
     defendant: '贺伟',
     gender: '男',
@@ -185,8 +237,13 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
     basePenalty: 13357.46,
     baseCompound: 783.81,
     cutoffDate: '2020-11-02',
+    rateMode: 'LPR',
+    lprTerm: '1Y',
+    lprBp: 90,
+    penaltyMultiple: 1.5,
     litigationFee: 5022.04,
     preservationFee: 0,
+    notes: '1年期LPR+90BP，上浮50%',
   },
 ];
 
@@ -333,50 +390,52 @@ export const AgentUI: React.FC = () => {
     }
   };
 
-  // 载入真实扣款回单样例（对应深圳高新区支行 秦*英 258,700 元贷款扣款回单）
+  // 载入真实扣款回单样例（对应深圳高新区支行 秦世英 258,700 元贷款扣款回单与司法裁判标准）
   const handleLoadSampleReceipt = () => {
     setReceiptMeta(SAMPLE_REPAYMENT_RECEIPT.meta);
-    const baseDate = params?.baseDate || '2019-12-10';
+    const baseDate = '2019-12-10';
     const sampleRecords = SAMPLE_REPAYMENT_RECEIPT.records.map(r => ({
       ...r,
       selected: dayjs(r.date).isAfter(dayjs(baseDate)),
     }));
     setRepayments(sampleRecords);
 
-    const currentParams: CalculationParams = params || {
+    const currentParams: CalculationParams = {
       baseDate: '2019-12-10',
-      endDate: dayjs().format('YYYY-MM-DD'),
+      endDate: '2026-09-11',
       principal: 258700.00,
       baseInterest: 0,
       basePenalty: 0,
-      rateMode: 'LPR',
+      rateMode: 'FIXED',
+      fixedRate: 7.18,
+      penaltyMultiple: 1.5,
+      compoundMode: 'NONE',
+      delayInterestEnabled: true,
+      executionDueDate: '2024-03-28',
+      dayCountConvention: '30_360',
+      deductionStrategy: 'COMMERCIAL_PRINCIPAL_FIRST',
+      litigationFee: 3529.56,
+      preservationFee: 1327.38,
       lprTerm: '1Y',
       lprBp: 0,
       lprFloatRatio: 0,
-      penaltyMultiple: 1.5,
-      compoundMode: 'INT_AND_PENALTY',
-      delayInterestEnabled: true,
-      deductionStrategy: 'LEGAL_EXPENSE_FIRST',
-      litigationFee: 0,
-      preservationFee: 0,
     };
 
-    if (!analysisResult) {
-      setAnalysisResult({
-        params: currentParams,
-        caseNo: '(2020)粤0305民初11892号 (借据: 811032260373/001)',
-        plaintiff: '某某商业银行深圳高新区支行',
-        defendant: '秦*英',
-        reasoning: '【个人贷款扣款回单审查结论】：借据号 811032260373/001，贷款到期日 2019-12-10，尚欠本金 258,700 元。到期后借款人陆续发生多次还款（共计提取 21 笔扣款明细）。系统已自动识别并勾选基准日（2019-12-10）之后的还款流水，用于分段冲减计息本金并核减最终债权。',
-        keyPoints: [
-          '提取到借款人秦*英全套 21 笔扣款流水，累计还款总额 ￥292,443.53',
-          '2019-12-10 判决/到期基准日后的还款（如2020年及2025年回款）已自动计入动态冲减',
-          '每一笔归还本金均在对应分段起始日扣减计息基数，精准遏制虚增罚息'
-        ],
-        repayments: sampleRecords,
-        receiptMeta: SAMPLE_REPAYMENT_RECEIPT.meta,
-      });
-    }
+    setAnalysisResult({
+      params: currentParams,
+      caseNo: '(2023)粤0304民初16637号 (借据: 811032260373)',
+      plaintiff: '某某商业银行股份有限公司深圳高新区支行',
+      defendant: '秦世英',
+      reasoning: '【司法判决与扣款回单全流程对账】：案号(2023)粤0304民初16637号，贷款到期日 2019-12-10，本金 258,700 元，合同执行年利率 7.18%，罚息利率 10.77%（上浮50%），计息规则严格采用 30/360（每月按30天/年360天，DAYS360）。到期后发生 9 笔还本流水，2023-06-20 判决查明本金为 147,321.69 元、暂计罚息 51,301.75 元；本金于 2025-05-22 全部还清（本金清零熔断停止计提加倍迟延履行金）。迟延金从 2024-03-28 计至 2025-05-22 共 415 天。',
+      keyPoints: [
+        '合同执行年利率固定 7.18%，逾期罚息按上浮50%为 10.77%，计息基准采用 30/360 规则与图一律师明细表完全对齐',
+        '判决确认案件受理费 ￥3,529.56、保全费 ￥1,327.38 并入执行标的池',
+        '依据法释〔2014〕8号第一条，加倍迟延金自 2024-03-28 计至 2025-05-22 本金清偿日熔断终止',
+        '扣除银行已扣罚息 ￥15,150.82 后，最终净债权本息与费用合计 ￥89,239.04'
+      ],
+      repayments: sampleRecords,
+      receiptMeta: SAMPLE_REPAYMENT_RECEIPT.meta,
+    });
 
     triggerRecalculate(currentParams, sampleRecords);
   };
@@ -508,19 +567,22 @@ export const AgentUI: React.FC = () => {
     setSelectedClientId(firstClient.id);
 
     const initialBatchParams: CalculationParams = {
-      baseDate: firstClient.cutoffDate || '2020-11-02',
-      endDate: dayjs().format('YYYY-MM-DD'),
+      baseDate: firstClient.cutoffDate || '2023-06-20',
+      endDate: '2026-09-11',
       principal: firstClient.principal,
       baseInterest: firstClient.baseInterest,
       basePenalty: firstClient.basePenalty,
-      rateMode: 'LPR',
-      lprTerm: '1Y',
-      lprBp: 60,
+      rateMode: firstClient.rateMode || 'FIXED',
+      fixedRate: firstClient.fixedRate || firstClient.annualRate || 7.18,
+      lprTerm: firstClient.lprTerm || '1Y',
+      lprBp: firstClient.lprBp || 0,
       lprFloatRatio: 0,
-      penaltyMultiple: 1.5,
-      compoundMode: 'INT_AND_PENALTY',
+      penaltyMultiple: firstClient.penaltyMultiple || 1.5,
+      compoundMode: 'NONE',
       delayInterestEnabled: true,
       deductionStrategy: 'LEGAL_EXPENSE_FIRST',
+      dayCountConvention: firstClient.dayCountConvention || '30_360',
+      executionDueDate: firstClient.executionDueDate || '2024-03-28',
       litigationFee: firstClient.litigationFee || 0,
       preservationFee: firstClient.preservationFee || 0,
     };
@@ -528,12 +590,13 @@ export const AgentUI: React.FC = () => {
     const mockAnalysis: ParsedAnalysisResult = {
       params: initialBatchParams,
       caseNo: firstClient.caseNo,
-      plaintiff: '某某消费金融股份有限公司',
+      plaintiff: '某某商业银行股份有限公司 / 消费金融公司',
       defendant: `${firstClient.defendant} (附表第1位客户)`,
-      reasoning: '【批量案件司法审查结论】：本案系某某消费金融公司诉多名借款人的消费信贷批量系列案。判决以《附表一 原告诉讼请求附表》形式分别载明了各被告姓名、案号、身份证、尚欠本金及利息罚息。判令以各被告截至指定截息日（如2020-11-02）的本金为基数，按1年期LPR加60BP上浮50%计算罚复利至清偿日，并加倍支付迟延履行金。',
+      reasoning: '【批量案件司法审查结论】：本案系针对多名借款人的批量系列案件。判决主文及附表分别载明了各被告姓名、案号、身份证、尚欠本金及利息罚息。【关键支持】：各借款人合同执行年利率（如7.18%、8.50%、6.80%或LPR浮动）与罚息上浮比例各自独立，系统已支持逐一读取并自动切换个人专属利率精准测算。',
       keyPoints: [
-        `共提取到附表内 ${SAMPLE_BATCH_CLIENTS.length} 位借款人清单（含谢添全、高俊胜、张立昕、钟良枢、朱乐冬、贺伟等）`,
-        '各借款人分别设立独立子案号，本金与暂计罚息独立测算',
+        `共提取到附表内 ${SAMPLE_BATCH_CLIENTS.length} 位借款人清单（含秦世英、谢添全、高俊胜、张立昕、钟良枢、朱乐冬、贺伟等）`,
+        '每位借款人具有独立的合同年利率与罚息规则，切换借款人时自动重载该客户专属年利率',
+        '首位借款人秦世英对应图一律师计算明细表标准案卷（执行年利率7.18%，罚息10.77%，30/360规则）',
         '支持在下方【批量案件客户选择器】中自由点击切换指定客户进行独立清算与证据生成'
       ],
       isBatchCase: true,
@@ -542,7 +605,7 @@ export const AgentUI: React.FC = () => {
       rawOutput: JSON.stringify({
         isBatchCase: true,
         batchClients: SAMPLE_BATCH_CLIENTS,
-        note: '样例已自动组装 6 名客户附表明细'
+        note: '样例已自动组装 7 名客户附表明细（每人利率独立）'
       }, null, 2),
     };
 
@@ -560,7 +623,7 @@ export const AgentUI: React.FC = () => {
 
     if (!analysisResult) return;
 
-    // 依据选定客户重构计算参数（严格精确到分位）
+    // 依据选定客户重构计算参数（严格精确到分位，并完整载入该借款人专属年利率）
     const currentParams = params || analysisResult.params;
     const updatedParams: CalculationParams = {
       ...currentParams,
@@ -570,6 +633,14 @@ export const AgentUI: React.FC = () => {
       litigationFee: roundToFen(client.litigationFee || 0),
       preservationFee: roundToFen(client.preservationFee || 0),
       baseDate: client.cutoffDate || currentParams.baseDate,
+      // 核心修复：读取每位客户独立的年利率与利率定价规则
+      rateMode: client.rateMode || currentParams.rateMode,
+      fixedRate: client.fixedRate !== undefined ? client.fixedRate : (client.annualRate !== undefined ? client.annualRate : currentParams.fixedRate),
+      penaltyMultiple: client.penaltyMultiple !== undefined ? client.penaltyMultiple : currentParams.penaltyMultiple,
+      lprTerm: client.lprTerm || currentParams.lprTerm,
+      lprBp: client.lprBp !== undefined ? client.lprBp : currentParams.lprBp,
+      executionDueDate: client.executionDueDate || currentParams.executionDueDate,
+      dayCountConvention: client.dayCountConvention || currentParams.dayCountConvention || '30_360',
     };
 
     // 更新文书显示的原被告与案号
@@ -624,16 +695,36 @@ export const AgentUI: React.FC = () => {
         setReceiptMeta(parsedData.receiptMeta);
       }
 
-      // 若识别出批量客户，默认选中第 1 位客户
+      let effectiveParams = parsedData.params;
+
+      // 若识别出批量客户，默认选中第 1 位客户，并完整载入该客户专属利率与本金
       if (parsedData.batchClients && parsedData.batchClients.length > 0) {
-        setSelectedClientId(parsedData.batchClients[0].id);
+        const firstC = parsedData.batchClients[0];
+        setSelectedClientId(firstC.id);
+        effectiveParams = {
+          ...effectiveParams,
+          principal: roundToFen(firstC.principal),
+          baseInterest: roundToFen(firstC.baseInterest),
+          basePenalty: roundToFen(firstC.basePenalty),
+          litigationFee: roundToFen(firstC.litigationFee || 0),
+          preservationFee: roundToFen(firstC.preservationFee || 0),
+          baseDate: firstC.cutoffDate || effectiveParams.baseDate,
+          rateMode: firstC.rateMode || effectiveParams.rateMode,
+          fixedRate: firstC.fixedRate !== undefined ? firstC.fixedRate : (firstC.annualRate !== undefined ? firstC.annualRate : effectiveParams.fixedRate),
+          penaltyMultiple: firstC.penaltyMultiple !== undefined ? firstC.penaltyMultiple : effectiveParams.penaltyMultiple,
+          lprTerm: firstC.lprTerm || effectiveParams.lprTerm,
+          lprBp: firstC.lprBp !== undefined ? firstC.lprBp : effectiveParams.lprBp,
+          executionDueDate: firstC.executionDueDate || effectiveParams.executionDueDate,
+          dayCountConvention: firstC.dayCountConvention || effectiveParams.dayCountConvention || '30_360',
+        };
+        setParams(effectiveParams);
       } else {
         setSelectedClientId(null);
       }
 
       // 2. 调度确定性高精算法进行清算
       const calculator = new InterestCalculator();
-      const calcResult = calculator.calculate(parsedData.params);
+      const calcResult = calculator.calculate(effectiveParams);
       setResult(calcResult);
     } catch (err: any) {
       console.error('大模型解析调用失败:', err);
@@ -1083,6 +1174,7 @@ export const AgentUI: React.FC = () => {
                             <th className="px-3.5 py-2.5 text-right">暂计利息</th>
                             <th className="px-3.5 py-2.5 text-right">暂计罚息</th>
                             <th className="px-3.5 py-2.5 text-right">暂计复利</th>
+                            <th className="px-3.5 py-2.5 text-center text-amber-300 font-bold">专属年利率 / 罚息规则</th>
                             <th className="px-3.5 py-2.5">截息日期</th>
                             <th className="px-3.5 py-2.5 text-right">受理费 / 保全费</th>
                             <th className="px-3.5 py-2.5 text-center">靶向操作</th>
@@ -1135,6 +1227,18 @@ export const AgentUI: React.FC = () => {
                                 </td>
                                 <td className="px-3.5 py-2.5 text-right font-mono text-purple-400 whitespace-nowrap">
                                   ￥{formatMoney(client.baseCompound)}
+                                </td>
+                                <td className="px-3.5 py-2.5 text-center whitespace-nowrap">
+                                  <div className="inline-flex flex-col items-center">
+                                    <span className="font-mono text-xs font-bold text-amber-300">
+                                      {client.rateMode === 'FIXED' 
+                                        ? `${client.fixedRate || client.annualRate || '-'}%/年 (固定)` 
+                                        : `${client.lprTerm || '1Y'} LPR${(client.lprBp || 0) >= 0 ? '+' : ''}${client.lprBp || 0}BP`}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">
+                                      罚息: {client.penaltyRate ? `${client.penaltyRate}%` : `${client.penaltyMultiple || 1.5}倍上浮`}
+                                    </span>
+                                  </div>
                                 </td>
                                 <td className="px-3.5 py-2.5 font-mono text-xs text-slate-300 whitespace-nowrap">
                                   {client.cutoffDate || '-'}
@@ -1466,10 +1570,15 @@ export const AgentUI: React.FC = () => {
                         </>
                       ) : (
                         <div className="space-y-1">
-                          <label className="block text-[11px] font-semibold text-slate-400">固定年利率 (%)</label>
+                          <label className="block text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                            <span>固定年利率 (%)</span>
+                            <span className="text-[10px] text-amber-300 font-normal">
+                              罚息: {((params.fixedRate || 0) * (params.penaltyMultiple || 1.5)).toFixed(2)}%/年
+                            </span>
+                          </label>
                           <input
                             type="number"
-                            step="0.1"
+                            step="0.01"
                             value={params.fixedRate || 0}
                             onChange={(e) => handleParamChange('fixedRate', parseFloat(e.target.value) || 0)}
                             className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
@@ -1498,6 +1607,22 @@ export const AgentUI: React.FC = () => {
                           <option value="INT_AND_PENALTY">对利息与罚息均计收复利</option>
                           <option value="INT_ONLY">仅对正常利息计复利</option>
                           <option value="NONE">不计复利</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                          <span>计息天数基准 (Day-Count)</span>
+                          <span className="text-[10px] text-blue-400 font-normal">司法精算标准</span>
+                        </label>
+                        <select
+                          value={params.dayCountConvention || '30_360'}
+                          onChange={(e) => handleParamChange('dayCountConvention', e.target.value as any)}
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-amber-300 font-medium focus:border-blue-500"
+                        >
+                          <option value="30_360">30/360（每月按30天/年360天，图一律师明细表算法）</option>
+                          <option value="ACT_360">实际天数/360（ACT/360，法定公历实际天数）</option>
+                          <option value="ACT_365">实际天数/365（ACT/365，常规公历天数）</option>
                         </select>
                       </div>
 

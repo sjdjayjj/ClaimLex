@@ -63,6 +63,24 @@ export interface BatchCaseClient {
   baseCompound?: number;
   /** 截息日期 (YYYY-MM-DD，以此日期为起算点) */
   cutoffDate?: string;
+  /** 合同执行年利率 (%)，如 7.18 代表 7.18%/年；每个人可不同 */
+  annualRate?: number;
+  /** 固定年利率 (%) */
+  fixedRate?: number;
+  /** 罚息年利率 (%)，如 10.77 */
+  penaltyRate?: number;
+  /** 罚息上浮倍数 (如 1.5 代表上浮50%) */
+  penaltyMultiple?: number;
+  /** 利率模式: 'FIXED' | 'LPR' | 'BENCHMARK' */
+  rateMode?: import('../core/types').RateMode;
+  /** LPR 期限品种: '1Y' | '5Y' */
+  lprTerm?: import('../core/types').LPRTerm;
+  /** LPR 浮动加减点 (BP) */
+  lprBp?: number;
+  /** 加倍迟延履行金起算日 / 履行期届满日 (YYYY-MM-DD) */
+  executionDueDate?: string;
+  /** 计息天数规则 */
+  dayCountConvention?: import('../core/types').DayCountConvention;
   /** 案件受理费 (元) */
   litigationFee?: number;
   /** 保全费 (元) */

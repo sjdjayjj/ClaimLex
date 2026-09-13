@@ -1,12 +1,13 @@
 export const JUDGMENT_PARSER_PROMPT = `
 你是一位精通中国金融审判实践的资深金融法务专家与法院法官助理。你的任务是从用户提供的金融借款、信用卡纠纷、消费信贷批量诉讼、民间借贷或担保追偿等司法裁判文书（判决书、调解书、附表裁定书或起诉状）中，精准提取债权清算所需的结构化要素，并进行专业的司法论证。
 
-【特别重点：支持批量案件与附表解析】：
+【特别重点：支持批量案件与附表解析及每位客户专属利率提取】：
 司法实践中大量信用卡与消费信贷案件属于“系列案/批量案”，判决书正文后通常附有《原告诉讼请求附表》、《被告欠款明细表》或主文附表（包含多个借款人/被告姓名、身份证号、案号、本金、利息、罚息、复利、截息日期等）。
+【关键注意】：各借款人的“合同执行年利率”（如 7.18%、6.5%、10.77% 等）、罚息上浮倍数或罚息利率在很多批量案中是各自独立的，严禁将所有借款人套用同一利率！
 如果文书中包含此类附表或多名被告/客户明细：
 1. 必须将 "isBatchCase" 设为 true；
-2. 并在 "batchClients" 数组中完整提取每一位借款人/客户的数据明细；
-3. 顶层的 "principal"、"baseInterest"、"basePenalty"、"baseDate"、"caseNo"、"defendant" 先默认填入附表中第 1 位客户的对应数值，供系统先期测算。
+2. 并在 "batchClients" 数组中完整提取每一位借款人/客户的数据明细，特别务必逐一读取该借款人的专属合同年利率 (annualRate/fixedRate)、罚息利率 (penaltyRate)、罚息上浮倍数 (penaltyMultiple) 与利率模式 (rateMode)；
+3. 顶层的 "principal"、"baseInterest"、"basePenalty"、"baseDate"、"caseNo"、"defendant"、"fixedRate" 先默认填入附表中第 1 位客户的对应数值，供系统先期测算。
 如果文书只是单一案件，则 "isBatchCase" 设为 false，"batchClients" 为空数组 []。
 
 【特别重点：银行扣款明细与还款流水】：
@@ -45,7 +46,15 @@ export const JUDGMENT_PARSER_PROMPT = `
       "baseInterest": 0.00, // 暂计利息 (元)
       "basePenalty": 17531.75, // 暂计罚息 (元)
       "baseCompound": 1379.15, // 暂计复利 (元)
+      "rateMode": "FIXED", // 该借款人适用利率模式: 'FIXED' (固定利率) 或 'LPR' 或 'BENCHMARK'
+      "annualRate": 7.18, // 该借款人合同执行年利率(%)，例如 7.18 表示 7.18%/年；每位客户若有不同请分别精确提取
+      "fixedRate": 7.18, // 若为固定年利率，填写百分比
+      "penaltyMultiple": 1.5, // 罚息上浮倍数 (如上浮50%填 1.5)
+      "penaltyRate": 10.77, // 罚息年利率(%)，若文书或附表直接载明罚息利率如 10.77%，则填 10.77
+      "lprTerm": "1Y", // 若为LPR浮动，该客户适用期限 '1Y' 或 '5Y'
+      "lprBp": 60, // 若为LPR浮动，该客户加减基点
       "cutoffDate": "2020-11-02", // 截息日期 (YYYY-MM-DD)
+      "executionDueDate": "2024-03-28", // 加倍迟延履行金起算日 (YYYY-MM-DD，若有)
       "litigationFee": 2775.60, // 案件受理费 (元)
       "preservationFee": 1138.89 // 保全费 (元)
     }

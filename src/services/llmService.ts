@@ -420,6 +420,14 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
     cutoffDate: typeof c.cutoffDate === 'string' && c.cutoffDate.length >= 8 ? c.cutoffDate : (rawJson.baseDate || today),
     litigationFee: roundToFen(Number(c.litigationFee) || 0),
     preservationFee: roundToFen(Number(c.preservationFee) || 0),
+    annualRate: c.annualRate !== undefined && c.annualRate !== null ? Number(c.annualRate) : (c.fixedRate !== undefined ? Number(c.fixedRate) : undefined),
+    fixedRate: c.fixedRate !== undefined && c.fixedRate !== null ? Number(c.fixedRate) : (c.annualRate !== undefined ? Number(c.annualRate) : undefined),
+    penaltyRate: c.penaltyRate !== undefined && c.penaltyRate !== null ? Number(c.penaltyRate) : undefined,
+    penaltyMultiple: c.penaltyMultiple !== undefined && c.penaltyMultiple !== null ? Number(c.penaltyMultiple) : undefined,
+    rateMode: (['FIXED', 'LPR', 'BENCHMARK'].includes(c.rateMode) ? c.rateMode : undefined),
+    lprTerm: (['1Y', '5Y'].includes(c.lprTerm) ? c.lprTerm : undefined),
+    lprBp: c.lprBp !== undefined && c.lprBp !== null ? Number(c.lprBp) : undefined,
+    executionDueDate: typeof c.executionDueDate === 'string' && c.executionDueDate.length >= 8 ? normalizeDate(c.executionDueDate) : undefined,
     notes: c.notes,
   }));
 

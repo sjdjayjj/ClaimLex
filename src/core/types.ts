@@ -13,6 +13,14 @@ export type LPRTerm = '1Y' | '5Y';
 export type CompoundMode = 'INT_ONLY' | 'INT_AND_PENALTY' | 'NONE';
 
 /**
+ * 计息天数与日利率折算基准（Day-Count Convention）
+ * 30_360: 每月固定30天，每年360天（同 Excel DAYS360，中国金融借款司法实践与银行借据最常用标准，即图一律师表算法）
+ * ACT_360: 实际公历天数 / 年基准360天
+ * ACT_365: 实际公历天数 / 年基准365天
+ */
+export type DayCountConvention = '30_360' | 'ACT_360' | 'ACT_365';
+
+/**
  * 还款抵扣策略 / 清偿顺序
  * LEGAL_EXPENSE_FIRST: 法定清偿顺序（《民法典》第561条及法释〔2014〕8号第四条：费用及实现债权费用 -> 利息/罚息/复利 -> 本金 -> 加倍迟延履行利息）
  * COMMERCIAL_PRINCIPAL_FIRST: 商业优先冲本模式（协商重组场景：还款全额优先冲减尚欠本金 -> 罚息利息 -> 费用 -> 加倍迟延金）
@@ -78,6 +86,8 @@ export interface CalculationParams {
   delayInterestEnabled: boolean;
   /** 履行期届满日（YYYY-MM-DD，生效法律文书履行期届满之日起算加倍迟延履行金，依据送达回证手工填入） */
   executionDueDate?: string;
+  /** 计息天数基准规则（默认 '30_360' 对齐银行借据与司法精算表，可选 'ACT_360'、'ACT_365'） */
+  dayCountConvention?: DayCountConvention;
   /** 还款抵扣策略（清偿顺序，默认 LEGAL_EXPENSE_FIRST 法定清偿顺序） */
   deductionStrategy?: DeductionStrategy;
   /** 判决确认案件受理费 (元) */

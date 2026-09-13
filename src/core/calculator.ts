@@ -6,7 +6,8 @@ import {
   LPRTerm, 
   RepaymentAllocationItem,
   SettlementConfirmation,
-  DeductionStrategy
+  DeductionStrategy,
+  DayCountConvention
 } from './types';
 import { RATE_HISTORY } from './rates';
 import dayjs from 'dayjs';
@@ -18,6 +19,37 @@ export const roundToFen = (num: number): number => {
   if (isNaN(num)) return 0;
   return Math.round((num + Number.EPSILON) * 100) / 100;
 };
+
+/**
+ * 30/360 天数算法（同 Excel DAYS360 标准版，每月按30天/年360天，银行借据与司法精算表最常用标准）
+ */
+export function calculateDays360(startDateStr: string, endDateStr: string): number {
+  if (startDateStr === endDateStr) return 0;
+  const d1 = dayjs(startDateStr);
+  const d2 = dayjs(endDateStr);
+  let y1 = d1.year(), m1 = d1.month() + 1, day1 = d1.date();
+  let y2 = d2.year(), m2 = d2.month() + 1, day2 = d2.date();
+
+  if (day1 === 31) day1 = 30;
+  if (day2 === 31 && day1 >= 30) day2 = 30;
+
+  return (y2 - y1) * 360 + (m2 - m1) * 30 + (day2 - day1);
+}
+
+/**
+ * 根据计息惯例计算两个日期之间的天数
+ */
+export function calculateIntervalDays(
+  startDateStr: string,
+  endDateStr: string,
+  convention: DayCountConvention = '30_360'
+): number {
+  if (startDateStr === endDateStr) return 0;
+  if (convention === '30_360') {
+    return calculateDays360(startDateStr, endDateStr);
+  }
+  return dayjs(endDateStr).diff(dayjs(startDateStr), 'day');
+}
 
 export class InterestCalculator {
   /**
@@ -64,6 +96,7 @@ export class InterestCalculator {
       compoundMode,
       delayInterestEnabled,
       executionDueDate,
+      dayCountConvention = '30_360',
       deductionStrategy = 'LEGAL_EXPENSE_FIRST',
       litigationFee = 0,
       preservationFee = 0,
@@ -257,10 +290,12 @@ export class InterestCalculator {
     let delayTerminatedGlobal = false;
 
     // 逐段测算
+    const yearDenominator = (dayCountConvention === 'ACT_365' ? 365 : 360);
+
     for (let i = 0; i < sortedDates.length - 1; i++) {
       const start = sortedDates[i];
       const end = sortedDates[i + 1];
-      const days = dayjs(end).diff(dayjs(start), 'day');
+      const days = calculateIntervalDays(start, end, dayCountConvention);
       totalDays += days;
 
       // 1. 如果当前节点起始点存在借款人还款事件，调用 Waterfall 抵充引擎冲减
@@ -305,10 +340,10 @@ export class InterestCalculator {
       }
       const penaltyRate = actualContractRate * penaltyMultiple;
 
-      // 3. 罚息计算: 实际天数 / 360，按冲减后本金计算
+      // 3. 罚息计算: 天数 / 年基准天数，按冲减后本金计算
       let periodPenalty = 0;
       if (currentPrincipal > 0) {
-        periodPenalty = roundToFen(currentPrincipal * (penaltyRate / 100) * (days / 360));
+        periodPenalty = roundToFen(currentPrincipal * (penaltyRate / 100) * (days / yearDenominator));
       }
 
       // 4. 复利计算: 按约定对滚动未结清利息/罚息计收
@@ -321,7 +356,7 @@ export class InterestCalculator {
         } else if (compoundMode === 'INT_AND_PENALTY') {
           compoundBase = accumulatedInterest;
         }
-        periodCompound = roundToFen(compoundBase * (penaltyRate / 100) * (days / 360));
+        periodCompound = roundToFen(compoundBase * (penaltyRate / 100) * (days / yearDenominator));
       }
 
       // 5. 迟延履行金合规化改造（严格遵循法释〔2014〕8号第一条）
