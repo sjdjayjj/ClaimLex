@@ -21,6 +21,13 @@ export type CompoundMode = 'INT_ONLY' | 'INT_AND_PENALTY' | 'NONE';
 export type DayCountConvention = '30_360' | 'ACT_360' | 'ACT_365';
 
 /**
+ * 迟延履行金计息基数范围
+ * PRINCIPAL_ONLY: 仅尚欠本金为基数（司法实践主流、律师底稿标准，对齐图一算法：本金清零即停止计提迟延金）
+ * PRINCIPAL_AND_FEES: 本金 + 判决确认固定费用（诉讼费/保全费，法释〔2014〕8号理论口径）
+ */
+export type DelayBaseMode = 'PRINCIPAL_ONLY' | 'PRINCIPAL_AND_FEES';
+
+/**
  * 还款抵扣策略 / 清偿顺序
  * LEGAL_EXPENSE_FIRST: 法定清偿顺序（《民法典》第561条及法释〔2014〕8号第四条：费用及实现债权费用 -> 利息/罚息/复利 -> 本金 -> 加倍迟延履行利息）
  * COMMERCIAL_PRINCIPAL_FIRST: 商业优先冲本模式（协商重组场景：还款全额优先冲减尚欠本金 -> 罚息利息 -> 费用 -> 加倍迟延金）
@@ -84,6 +91,8 @@ export interface CalculationParams {
   penaltyMultiple: number;
   compoundMode: CompoundMode;
   delayInterestEnabled: boolean;
+  /** 迟延履行金计息基数范围（默认 'PRINCIPAL_ONLY' 仅本金，可选 'PRINCIPAL_AND_FEES' 含诉讼保全费） */
+  delayBaseMode?: DelayBaseMode;
   /** 履行期届满日（YYYY-MM-DD，生效法律文书履行期届满之日起算加倍迟延履行金，依据送达回证手工填入） */
   executionDueDate?: string;
   /** 计息天数基准规则（默认 '30_360' 对齐银行借据与司法精算表，可选 'ACT_360'、'ACT_365'） */

@@ -1627,14 +1627,37 @@ export const AgentUI: React.FC = () => {
                       </div>
 
                       <div className="space-y-1">
-                        <label className="block text-[11px] font-semibold text-slate-400">加倍迟延履行利息</label>
+                        <label className="block text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                          <span>加倍迟延履行利息 (法释8号)</span>
+                          <span className="text-[10px] text-amber-300 font-normal">
+                            {params.delayInterestEnabled ? (params.delayBaseMode === 'PRINCIPAL_AND_FEES' ? '本金+费用基数' : '仅本金基数') : '不计'}
+                          </span>
+                        </label>
                         <select
-                          value={params.delayInterestEnabled ? 'YES' : 'NO'}
-                          onChange={(e) => handleParamChange('delayInterestEnabled', e.target.value === 'YES')}
-                          className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white"
+                          value={
+                            !params.delayInterestEnabled
+                              ? 'NO'
+                              : params.delayBaseMode === 'PRINCIPAL_AND_FEES'
+                              ? 'YES_ALL'
+                              : 'YES_PRINCIPAL'
+                          }
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'NO') {
+                              handleParamChange('delayInterestEnabled', false);
+                            } else if (val === 'YES_ALL') {
+                              handleParamChange('delayInterestEnabled', true);
+                              handleParamChange('delayBaseMode', 'PRINCIPAL_AND_FEES');
+                            } else {
+                              handleParamChange('delayInterestEnabled', true);
+                              handleParamChange('delayBaseMode', 'PRINCIPAL_ONLY');
+                            }
+                          }}
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-amber-300 font-medium focus:border-blue-500"
                         >
-                          <option value="YES">计收 (日万分之1.75)</option>
-                          <option value="NO">暂不计收</option>
+                          <option value="YES_PRINCIPAL">计收 (日万分之1.75，仅本金为基数，对齐图一律师表)</option>
+                          <option value="YES_ALL">计收 (日万分之1.75，本金+诉讼保全费，严格法释8号)</option>
+                          <option value="NO">暂不计收加倍迟延履行金</option>
                         </select>
                       </div>
 

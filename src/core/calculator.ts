@@ -7,7 +7,8 @@ import {
   RepaymentAllocationItem,
   SettlementConfirmation,
   DeductionStrategy,
-  DayCountConvention
+  DayCountConvention,
+  DelayBaseMode
 } from './types';
 import { RATE_HISTORY } from './rates';
 import dayjs from 'dayjs';
@@ -95,6 +96,7 @@ export class InterestCalculator {
       penaltyMultiple = 1.5,
       compoundMode,
       delayInterestEnabled,
+      delayBaseMode = 'PRINCIPAL_ONLY',
       executionDueDate,
       dayCountConvention = '30_360',
       deductionStrategy = 'LEGAL_EXPENSE_FIRST',
@@ -361,8 +363,12 @@ export class InterestCalculator {
 
       // 5. 迟延履行金合规化改造（严格遵循法释〔2014〕8号第一条）
       // 法释〔2014〕8号第一条：加倍部分债务利息=尚未清偿的生效法律文书确定的除一般债务利息之外的金钱债务×日万分之1.75×迟延履行期间
-      // 计息基数仅限：本金余额 + 判决确认的诉讼保全等固定费用余额；严禁将利息、罚息、复利作为基数。
-      const delayBase = roundToFen(Math.max(0, currentPrincipal + currentFee));
+      // 模式 A（PRINCIPAL_ONLY）：仅以尚欠本金为基数（司法实践主流、律师底稿标准，对齐图一算法：本金清零即彻底终止迟延金）
+      // 模式 B（PRINCIPAL_AND_FEES）：本金余额 + 判决确认的诉讼保全等固定费用余额（严格法释8号理论口径）
+      const delayBase = (delayBaseMode === 'PRINCIPAL_AND_FEES')
+        ? roundToFen(Math.max(0, currentPrincipal + currentFee))
+        : roundToFen(Math.max(0, currentPrincipal));
+
       const isDelayTerminated = (delayBase <= 0);
       if (isDelayTerminated && currentPrincipal <= 0) {
         delayTerminatedGlobal = true;
