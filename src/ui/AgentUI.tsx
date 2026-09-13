@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { InterestCalculator, roundToFen } from '../core/calculator';
-import { CalculationParams, CalculationResult } from '../core/types';
+import { CalculationParams, CalculationResult, RepaymentRecord, RepaymentReceiptMeta } from '../core/types';
 import { RATE_HISTORY } from '../core/rates';
 import { extractTextFromPDF } from '../parser/pdfUtil';
 import { cleanDocumentText } from '../parser/textCleaner';
@@ -8,6 +8,7 @@ import { exportToExcel } from '../core/exportUtil';
 import { LLMConfigModal } from './LLMConfigModal';
 import { LLMConfig, ParsedAnalysisResult, BatchCaseClient } from '../services/llmTypes';
 import { loadLLMConfig, analyzeJudgmentWithLLM } from '../services/llmService';
+import { parseRepaymentReceiptFromText, SAMPLE_REPAYMENT_RECEIPT, normalizeDate } from '../parser/repaymentReceiptParser';
 import dayjs from 'dayjs';
 import {
   FileUp,
@@ -44,6 +45,10 @@ import {
   X,
   Zap,
   UploadCloud,
+  Receipt,
+  CreditCard,
+  Filter,
+  Trash2,
 } from 'lucide-react';
 
 const SAMPLE_JUDGMENT = `【民事判决书摘录（广东省高级人民法院典型金融借贷案例）】
@@ -222,6 +227,11 @@ export const AgentUI: React.FC = () => {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [params, setParams] = useState<CalculationParams | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 银行扣款明细 / 还款流水状态（支持多笔勾选参与算息）
+  const [repayments, setRepayments] = useState<RepaymentRecord[]>([]);
+  const [receiptMeta, setReceiptMeta] = useState<RepaymentReceiptMeta | null>(null);
+  const repaymentFileInputRef = useRef<HTMLInputElement>(null);
 
   // Smartisan 交互：移动端导航抽屉 + 控制台平滑滚动锚点
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -434,7 +444,20 @@ export const AgentUI: React.FC = () => {
       });
 
       setAnalysisResult(parsedData);
-      setParams(parsedData.params);
+
+      // LLM 解析结果含还款流水/回单时同步填充
+      if (parsedData.repayments && parsedData.repayments.length > 0) {
+        setRepayments(parsedData.repayments);
+      }
+      if (parsedData.receiptMeta) {
+        setReceiptMeta(parsedData.receiptMeta);
+      }
+
+      const effectiveParams: CalculationParams = {
+        ...parsedData.params,
+        repayments: parsedData.repayments || [],
+      };
+      setParams(effectiveParams);
 
       // 若识别出批量客户，默认选中第 1 位客户
       if (parsedData.batchClients && parsedData.batchClients.length > 0) {
@@ -445,7 +468,7 @@ export const AgentUI: React.FC = () => {
 
       // 2. 调度确定性高精算法进行清算
       const calculator = new InterestCalculator();
-      const calcResult = calculator.calculate(parsedData.params);
+      const calcResult = calculator.calculate(effectiveParams);
       setResult(calcResult);
     } catch (err: any) {
       console.error('大模型解析调用失败:', err);
@@ -456,11 +479,190 @@ export const AgentUI: React.FC = () => {
     }
   };
 
+  // 触发核心热重算（携带勾选中的还款流水）
+  const triggerRecalculate = (targetParams: CalculationParams, targetRepayments?: RepaymentRecord[]) => {
+    const activeRepayments = targetRepayments !== undefined ? targetRepayments : repayments;
+    const finalParams: CalculationParams = {
+      ...targetParams,
+      repayments: activeRepayments,
+    };
+    setParams(finalParams);
+    try {
+      const calculator = new InterestCalculator();
+      const calcResult = calculator.calculate(finalParams);
+      setResult(calcResult);
+    } catch (err) {
+      console.error('利息计算执行异常:', err);
+    }
+  };
+
+  // 上传银行扣款明细 / 还款回单 PDF 并自动解析
+  const handleRepaymentPdfUpload = async (file: File) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      alert('请上传 PDF 格式的银行扣款回单或还款流水清单');
+      return;
+    }
+    setIsUploading(true);
+    setParseProgressText('正在读取并提取银行扣款回单 PDF 表格流水...');
+    try {
+      const extractRes = await extractTextFromPDF(file);
+      const parsedReceipt = parseRepaymentReceiptFromText(extractRes.text);
+      if (parsedReceipt.records.length === 0) {
+        alert('未在上传的 PDF 中探测到格式化扣款明细流水，请核对是否为包含流水号与扣款金额的回单');
+        return;
+      }
+
+      setReceiptMeta(parsedReceipt.meta);
+      const baseDate = params?.baseDate || parsedReceipt.meta.loanDueDate || '2019-12-10';
+      const initializedRecords = parsedReceipt.records.map(r => ({
+        ...r,
+        date: normalizeDate(r.date) || r.date,
+        selected: dayjs(r.date).isAfter(dayjs(baseDate)),
+      }));
+      setRepayments(initializedRecords);
+
+      const currentParams: CalculationParams = params || {
+        baseDate,
+        endDate: dayjs().format('YYYY-MM-DD'),
+        principal: parsedReceipt.meta.loanAmount || 258700,
+        baseInterest: 0,
+        basePenalty: 0,
+        rateMode: 'LPR',
+        lprTerm: '1Y',
+        lprBp: 0,
+        lprFloatRatio: 0,
+        penaltyMultiple: 1.5,
+        compoundMode: 'INT_AND_PENALTY',
+        delayInterestEnabled: true,
+        deductionStrategy: 'LEGAL_EXPENSE_FIRST',
+        litigationFee: 0,
+        preservationFee: 0,
+      };
+
+      if (!analysisResult) {
+        setAnalysisResult({
+          params: currentParams,
+          caseNo: parsedReceipt.meta.loanReceiptNo ? `借据:${parsedReceipt.meta.loanReceiptNo}` : '银行扣款回单测算',
+          plaintiff: parsedReceipt.meta.loanOrg || '深圳高新区支行',
+          defendant: parsedReceipt.meta.borrowerName || '借款人',
+          reasoning: `【银行扣款流水已提取】：共导入 ${initializedRecords.length} 笔扣款流水，累计还款 ￥${formatMoney(parsedReceipt.totalRepaidSum)} 元。系统已自动按基准日（${baseDate}）智能匹配判决后生效抵扣流水，并切入分段利息冲减模型。`,
+          keyPoints: [
+            `成功提取贷款借据：${parsedReceipt.meta.loanReceiptNo || '未指定'}，借款金额 ￥${formatMoney(parsedReceipt.meta.loanAmount)}`,
+            `共解析出 ${initializedRecords.length} 笔流水，基准日后还款将自动冲减计息本金`,
+            '支持在还款明细表中自由勾选或排除任一还款项进行敏感性测算',
+          ],
+          repayments: initializedRecords,
+          receiptMeta: parsedReceipt.meta,
+        });
+      }
+
+      triggerRecalculate(currentParams, initializedRecords);
+    } catch (err: any) {
+      console.error('扣款回单解析失败:', err);
+      alert(`扣款回单解析失败: ${err.message || '文件格式异常'}`);
+    } finally {
+      setIsUploading(false);
+      setParseProgressText('');
+    }
+  };
+
+  // 载入真实扣款回单样例（深圳高新区支行 秦世英 258,700 元贷款扣款回单与司法裁判标准）
+  const handleLoadSampleReceipt = () => {
+    setReceiptMeta(SAMPLE_REPAYMENT_RECEIPT.meta);
+    const baseDate = '2019-12-10';
+    const sampleRecords = SAMPLE_REPAYMENT_RECEIPT.records.map(r => ({
+      ...r,
+      date: normalizeDate(r.date) || r.date,
+      selected: dayjs(r.date).isAfter(dayjs(baseDate)),
+    }));
+    setRepayments(sampleRecords);
+
+    const currentParams: CalculationParams = {
+      baseDate: '2019-12-10',
+      endDate: '2026-09-11',
+      principal: 258700.00,
+      baseInterest: 0,
+      basePenalty: 0,
+      rateMode: 'FIXED',
+      fixedRate: 7.18,
+      penaltyMultiple: 1.5,
+      compoundMode: 'NONE',
+      delayInterestEnabled: true,
+      executionDueDate: '2024-03-28',
+      dayCountConvention: '30_360',
+      deductionStrategy: 'COMMERCIAL_PRINCIPAL_FIRST',
+      litigationFee: 3529.56,
+      preservationFee: 1327.38,
+      lprTerm: '1Y',
+      lprBp: 0,
+      lprFloatRatio: 0,
+    };
+
+    setAnalysisResult({
+      params: currentParams,
+      caseNo: '(2023)粤0304民初16637号 (借据: 811032260373)',
+      plaintiff: '某某商业银行股份有限公司深圳高新区支行',
+      defendant: '秦世英',
+      reasoning: '【司法判决与扣款回单全流程对账】：案号(2023)粤0304民初16637号，贷款到期日 2019-12-10，本金 258,700 元，合同执行年利率 7.18%，罚息利率 10.77%（上浮50%），计息规则严格采用 30/360。到期后发生 9 笔还本流水，2023-06-20 判决查明本金为 147,321.69 元、暂计罚息 51,301.75 元；本金于 2025-05-22 全部还清（本金清零熔断停止计提加倍迟延履行金）。迟延金从 2024-03-28 计至 2025-05-22 共 415 天。',
+      keyPoints: [
+        '合同执行年利率固定 7.18%，逾期罚息按上浮50%为 10.77%，计息基准采用 30/360',
+        '判决确认案件受理费 ￥3,529.56、保全费 ￥1,327.38 并入执行标的池',
+        '依据法释〔2014〕8号第一条，加倍迟延金自 2024-03-28 计至 2025-05-22 本金清偿日熔断终止',
+        '扣除银行已扣罚息 ￥15,150.82 后，最终净债权本息与费用合计 ￥89,239.04',
+      ],
+      repayments: sampleRecords,
+      receiptMeta: SAMPLE_REPAYMENT_RECEIPT.meta,
+    });
+
+    triggerRecalculate(currentParams, sampleRecords);
+  };
+
+  // 单笔还款切换勾选
+  const handleToggleRepayment = (id: string) => {
+    const updated = repayments.map(r => r.id === id ? { ...r, selected: !r.selected } : r);
+    setRepayments(updated);
+    if (params) {
+      triggerRecalculate(params, updated);
+    }
+  };
+
+  // 批量全选 / 全不选还款
+  const handleSelectAllRepayments = (selected: boolean) => {
+    const updated = repayments.map(r => ({ ...r, selected }));
+    setRepayments(updated);
+    if (params) {
+      triggerRecalculate(params, updated);
+    }
+  };
+
+  // 仅选基准日后的还款
+  const handleSelectAfterBaseDate = () => {
+    const baseDate = params?.baseDate || '2019-12-10';
+    const updated = repayments.map(r => ({
+      ...r,
+      selected: dayjs(r.date).isAfter(dayjs(baseDate)),
+    }));
+    setRepayments(updated);
+    if (params) {
+      triggerRecalculate(params, updated);
+    }
+  };
+
+  // 清空扣款流水
+  const handleClearRepayments = () => {
+    setRepayments([]);
+    setReceiptMeta(null);
+    if (params) {
+      triggerRecalculate(params, []);
+    }
+  };
+
   // 人机协同交互：支持微调任何参数并实时热重算
   const handleParamChange = (field: keyof CalculationParams, value: any) => {
     if (!params) return;
     let cleanVal = value;
-    if (['principal', 'baseInterest', 'basePenalty'].includes(field)) {
+    if (['principal', 'baseInterest', 'basePenalty', 'litigationFee', 'preservationFee'].includes(field)) {
       cleanVal = roundToFen(Number(value) || 0);
     }
     const updated = { ...params, [field]: cleanVal };
@@ -686,6 +888,29 @@ export const AgentUI: React.FC = () => {
                       title="载入包含《原告诉讼请求附表》的批量案件裁判文书示例（含多位借款人）"
                     >
                       <Layers className="w-3.5 h-3.5" /> 载入批量案件附表样例（消金系列案）
+                    </button>
+                    <button
+                      onClick={handleLoadSampleReceipt}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card text-foreground hover:bg-muted transition-colors"
+                      title="载入银行个人贷款扣款回单明细流水示例（秦世英 25.87万借款扣款表）"
+                    >
+                      <Receipt className="w-3.5 h-3.5" /> 载入扣款回单流水样例
+                    </button>
+
+                    <input
+                      type="file"
+                      ref={repaymentFileInputRef}
+                      onChange={(e) => e.target.files?.[0] && handleRepaymentPdfUpload(e.target.files[0])}
+                      accept=".pdf"
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => repaymentFileInputRef.current?.click()}
+                      disabled={isUploading}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-50"
+                      title="独立上传并提取银行《个人贷款扣款回单》PDF 表格流水"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" /> 上传扣款回单 PDF
                     </button>
                     <input
                       type="file"
@@ -968,6 +1193,94 @@ export const AgentUI: React.FC = () => {
                           <option value="NO">暂不计收</option>
                         </select>
                       </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-medium text-ink-2">计息天数基准 (Day-Count)</label>
+                        <select
+                          value={params.dayCountConvention || '30_360'}
+                          onChange={(e) => handleParamChange('dayCountConvention', e.target.value as any)}
+                          className="w-full text-sm px-2.5 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          <option value="30_360">30/360（每月30天 / 年360天）【银行借据与司法精算默认】</option>
+                          <option value="ACT_360">实际天数 / 360</option>
+                          <option value="ACT_365">实际天数 / 365</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-medium text-ink-2">还款抵扣清偿顺序</label>
+                        <select
+                          value={params.deductionStrategy || 'LEGAL_EXPENSE_FIRST'}
+                          onChange={(e) => handleParamChange('deductionStrategy', e.target.value as any)}
+                          className="w-full text-sm px-2.5 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          <option value="LEGAL_EXPENSE_FIRST">法定优先（费用→欠息罚息→本金→迟延金）【民法典561条 推荐】</option>
+                          <option value="COMMERCIAL_PRINCIPAL_FIRST">商业优先冲本（协商重组场景）</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-medium text-ink-2">加倍迟延金基数模式</label>
+                        <select
+                          value={
+                            !params.delayInterestEnabled
+                              ? 'NO'
+                              : params.delayBaseMode === 'PRINCIPAL_AND_FEES'
+                              ? 'YES_ALL'
+                              : 'YES_PRINCIPAL'
+                          }
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'NO') {
+                              handleParamChange('delayInterestEnabled', false);
+                            } else if (val === 'YES_ALL') {
+                              handleParamChange('delayInterestEnabled', true);
+                              handleParamChange('delayBaseMode', 'PRINCIPAL_AND_FEES');
+                            } else {
+                              handleParamChange('delayInterestEnabled', true);
+                              handleParamChange('delayBaseMode', 'PRINCIPAL_ONLY');
+                            }
+                          }}
+                          className="w-full text-sm px-2.5 py-2 rounded-md border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                        >
+                          <option value="YES_PRINCIPAL">仅尚欠本金为基数（主流）</option>
+                          <option value="YES_ALL">本金 + 诉讼保全费（法释〔2014〕8号）</option>
+                          <option value="NO">不计付迟延金</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-medium text-ink-2">履行期届满日期</label>
+                        <input
+                          type="date"
+                          value={params.executionDueDate || ''}
+                          onChange={(e) => handleParamChange('executionDueDate', e.target.value)}
+                          className="w-full text-sm px-2.5 py-2 rounded-md border border-input bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                          title="生效法律文书确定的履行期间届满之日，加倍迟延履行金自该日起算"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-medium text-ink-2">判决案件受理费 (诉讼费)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={params.litigationFee || 0}
+                          onChange={(e) => handleParamChange('litigationFee', parseFloat(e.target.value) || 0)}
+                          className="w-full text-sm px-2.5 py-2 rounded-md border border-input bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-medium text-ink-2">判决保全费 / 执行费</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={params.preservationFee || 0}
+                          onChange={(e) => handleParamChange('preservationFee', parseFloat(e.target.value) || 0)}
+                          className="w-full text-sm px-2.5 py-2 rounded-md border border-input bg-background text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1157,6 +1470,139 @@ export const AgentUI: React.FC = () => {
                                   </tr>
                                 );
                               })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 银行扣款回单 / 还款流水冲减明细（支持勾选参与算息） */}
+                    {repayments.length > 0 && (
+                      <div className="pt-4 border-t border-border space-y-3">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-foreground flex items-center gap-2 flex-wrap">
+                              <Receipt className="w-4 h-4 text-primary" />
+                              <span>银行还款流水与判决后冲减核算</span>
+                              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/30 font-mono">
+                                共 {repayments.length} 笔 · 勾选 {repayments.filter(r => r.selected !== false).length} 笔参与算息
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+                              <span>
+                                参与冲减总还款：
+                                <strong className="text-primary font-mono ml-1">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.totalAmount, 0))}</strong>
+                              </span>
+                              <span>
+                                累计冲减本金：
+                                <strong className="text-ink font-mono ml-1">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.principal, 0))}</strong>
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={handleSelectAfterBaseDate}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border border-border bg-card text-foreground hover:bg-muted transition"
+                              title="自动勾选基准日之后发生的还款（基准日前还款通常已在起诉时冲抵完毕）"
+                            >
+                              <Filter className="w-3 h-3" /> 仅选基准日后还款
+                            </button>
+                            <button
+                              onClick={() => handleSelectAllRepayments(true)}
+                              className="px-2.5 py-1 rounded-md text-xs border border-border bg-card text-foreground hover:bg-muted transition"
+                            >
+                              全选
+                            </button>
+                            <button
+                              onClick={() => handleSelectAllRepayments(false)}
+                              className="px-2.5 py-1 rounded-md text-xs border border-border bg-card text-foreground hover:bg-muted transition"
+                            >
+                              全不选
+                            </button>
+                            <button
+                              onClick={handleClearRepayments}
+                              className="px-2 py-1 rounded-md text-xs text-state-error hover:bg-state-error/10 border border-transparent hover:border-state-error/30 transition inline-flex items-center gap-1"
+                              title="移除全部还款流水明细"
+                            >
+                              <Trash2 className="w-3 h-3" /> 清空流水
+                            </button>
+                          </div>
+                        </div>
+
+                        {receiptMeta && (
+                          <div className="p-2.5 rounded-md bg-muted/40 border border-border flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+                            {receiptMeta.borrowerName && <span>借款人：<strong className="text-foreground">{receiptMeta.borrowerName}</strong></span>}
+                            {receiptMeta.loanReceiptNo && <span>借据号：<span className="font-mono text-foreground">{receiptMeta.loanReceiptNo}</span></span>}
+                            {receiptMeta.loanAmount !== undefined && <span>借款金额：<span className="font-mono text-primary">￥{formatMoney(receiptMeta.loanAmount)}</span></span>}
+                            {receiptMeta.loanStartDate && <span>借款期限：<span className="font-mono text-ink">{receiptMeta.loanStartDate} 至 {receiptMeta.loanDueDate || '-'}</span></span>}
+                            {receiptMeta.loanOrg && <span>经办机构：<span className="text-ink">{receiptMeta.loanOrg}</span></span>}
+                          </div>
+                        )}
+
+                        <div className="overflow-x-auto rounded-md border border-border bg-card max-h-72 overflow-y-auto smartisan-scroll">
+                          <table className="w-full text-left text-xs text-ink">
+                            <thead className="bg-muted text-muted-foreground border-b border-border text-[11px] sticky top-0 z-10">
+                              <tr>
+                                <th className="px-3 py-2.5 text-center w-12">参与算息</th>
+                                <th className="px-3 py-2.5">序号</th>
+                                <th className="px-3 py-2.5">交易流水号</th>
+                                <th className="px-3 py-2.5">扣款日期</th>
+                                <th className="px-3 py-2.5 text-right text-primary">归还本金 (元)</th>
+                                <th className="px-3 py-2.5 text-right">归还利息 (元)</th>
+                                <th className="px-3 py-2.5 text-right text-state-warning">归还罚息 (元)</th>
+                                <th className="px-3 py-2.5 text-right text-state-info">归还复利 (元)</th>
+                                <th className="px-3 py-2.5 text-right font-bold text-foreground">还款总额 (元)</th>
+                                <th className="px-3 py-2.5 text-center">状态说明</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {repayments.map((r, idx) => {
+                                const isAfterBase = params?.baseDate ? dayjs(r.date).isAfter(dayjs(params.baseDate)) : true;
+                                const isSelected = r.selected !== false;
+                                return (
+                                  <tr
+                                    key={r.id || idx}
+                                    onClick={() => handleToggleRepayment(r.id)}
+                                    className={`cursor-pointer transition-colors ${
+                                      isSelected ? 'bg-primary/5 hover:bg-primary/10' : 'hover:bg-muted/60 opacity-60'
+                                    }`}
+                                  >
+                                    <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => handleToggleRepayment(r.id)}
+                                        className="w-3.5 h-3.5 rounded accent-primary cursor-pointer"
+                                      />
+                                    </td>
+                                    <td className="px-3 py-2 text-muted-foreground font-mono">{idx + 1}</td>
+                                    <td className="px-3 py-2 font-mono text-ink">{r.serialNo}</td>
+                                    <td className="px-3 py-2 font-mono text-muted-foreground">{r.date}</td>
+                                    <td className="px-3 py-2 text-right font-mono font-medium text-primary">￥{formatMoney(r.principal)}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-ink">￥{formatMoney(r.interest)}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-state-warning">￥{formatMoney(r.penalty)}</td>
+                                    <td className="px-3 py-2 text-right font-mono text-state-info">￥{formatMoney(r.compound)}</td>
+                                    <td className="px-3 py-2 text-right font-mono font-bold text-foreground">￥{formatMoney(r.totalAmount)}</td>
+                                    <td className="px-3 py-2 text-center">
+                                      {isAfterBase ? (
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary border border-primary/30">基准日后 · 冲减算息</span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded text-[10px] text-muted-foreground bg-muted border border-border">基准日前</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="bg-muted/40 border-t-2 border-border">
+                                <td colSpan={4} className="px-3 py-2.5 text-right font-semibold text-foreground">勾选合计（参与冲减）</td>
+                                <td className="px-3 py-2.5 text-right font-mono text-primary">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.principal, 0))}</td>
+                                <td className="px-3 py-2.5 text-right font-mono text-ink">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.interest, 0))}</td>
+                                <td className="px-3 py-2.5 text-right font-mono text-state-warning">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.penalty, 0))}</td>
+                                <td className="px-3 py-2.5 text-right font-mono text-state-info">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.compound, 0))}</td>
+                                <td className="px-3 py-2.5 text-right font-mono font-bold text-foreground">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.totalAmount, 0))}</td>
+                                <td className="px-3 py-2.5"></td>
+                              </tr>
                             </tbody>
                           </table>
                         </div>

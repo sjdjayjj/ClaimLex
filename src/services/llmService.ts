@@ -1,6 +1,7 @@
-import { CalculationParams } from '../core/types';
+import { CalculationParams, RepaymentRecord } from '../core/types';
 import { roundToFen } from '../core/calculator';
 import { LLMConfig, ParsedAnalysisResult, BatchCaseClient } from './llmTypes';
+import { parseRepaymentReceiptFromText, normalizeDate } from '../parser/repaymentReceiptParser';
 import { JUDGMENT_PARSER_PROMPT } from '../parser/prompt';
 import dayjs from 'dayjs';
 
@@ -419,10 +420,41 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
     cutoffDate: typeof c.cutoffDate === 'string' && c.cutoffDate.length >= 8 ? c.cutoffDate : (rawJson.baseDate || today),
     litigationFee: roundToFen(Number(c.litigationFee) || 0),
     preservationFee: roundToFen(Number(c.preservationFee) || 0),
+    annualRate: c.annualRate !== undefined && c.annualRate !== null ? Number(c.annualRate) : (c.fixedRate !== undefined ? Number(c.fixedRate) : undefined),
+    fixedRate: c.fixedRate !== undefined && c.fixedRate !== null ? Number(c.fixedRate) : (c.annualRate !== undefined ? Number(c.annualRate) : undefined),
+    penaltyRate: c.penaltyRate !== undefined && c.penaltyRate !== null ? Number(c.penaltyRate) : undefined,
+    penaltyMultiple: c.penaltyMultiple !== undefined && c.penaltyMultiple !== null ? Number(c.penaltyMultiple) : undefined,
+    rateMode: (['FIXED', 'LPR', 'BENCHMARK'].includes(c.rateMode) ? c.rateMode : undefined),
+    lprTerm: (['1Y', '5Y'].includes(c.lprTerm) ? c.lprTerm : undefined),
+    lprBp: c.lprBp !== undefined && c.lprBp !== null ? Number(c.lprBp) : undefined,
+    executionDueDate: typeof c.executionDueDate === 'string' && c.executionDueDate.length >= 8 ? normalizeDate(c.executionDueDate) : undefined,
     notes: c.notes,
   }));
 
   const isBatchCase = rawJson.isBatchCase === true || batchClients.length > 1;
+
+  // 4. 解析还款扣款明细记录
+  const rawRepayments = Array.isArray(rawJson.repayments) ? rawJson.repayments : [];
+  const repayments: RepaymentRecord[] = rawRepayments.map((r: any, index: number) => {
+    const d = normalizeDate(r.date || '');
+    const isAfterBase = dayjs(d).isAfter(dayjs(params.baseDate));
+    return {
+      id: String(r.id || index + 1),
+      serialNo: r.serialNo || `FLOW_${index + 1}`,
+      date: d,
+      principal: roundToFen(Number(r.principal) || 0),
+      interest: roundToFen(Number(r.interest) || 0),
+      penalty: roundToFen(Number(r.penalty) || 0),
+      compound: roundToFen(Number(r.compound) || 0),
+      totalAmount: roundToFen(Number(r.totalAmount) || 0),
+      selected: typeof r.selected === 'boolean' ? r.selected : isAfterBase,
+      remark: r.remark || (isAfterBase ? '判决后还款冲减' : '判决前还款'),
+    };
+  });
+
+  if (repayments.length > 0) {
+    params.repayments = repayments;
+  }
 
   return {
     params,
@@ -435,6 +467,7 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
       isBatchCase,
       batchClients,
       selectedClientId: batchClients.length > 0 ? batchClients[0].id : undefined,
+      repayments: repayments.length > 0 ? repayments : undefined,
     },
   };
 }
@@ -526,6 +559,20 @@ export async function analyzeJudgmentWithLLM(
     const parsedJson = extractJSONFromLLMOutput(rawContent);
     const { params, extra } = normalizeExtractedParams(parsedJson);
 
+    // 智能兜底：若文档包含扣款回单/流水特征，自动补齐流水抽取
+    if ((!params.repayments || params.repayments.length === 0) &&
+        (documentText.includes('扣款回单') || documentText.includes('交易流水号') || documentText.includes('归还本金'))) {
+      const receiptRes = parseRepaymentReceiptFromText(documentText);
+      if (receiptRes.records.length > 0) {
+        params.repayments = receiptRes.records.map(r => ({
+          ...r,
+          selected: dayjs(r.date).isAfter(dayjs(params.baseDate)),
+        }));
+        extra.repayments = params.repayments;
+        extra.receiptMeta = receiptRes.meta;
+      }
+    }
+
     return {
       params,
       caseNo: extra.caseNo,
@@ -537,6 +584,8 @@ export async function analyzeJudgmentWithLLM(
       isBatchCase: extra.isBatchCase,
       batchClients: extra.batchClients,
       selectedClientId: extra.selectedClientId,
+      receiptMeta: extra.receiptMeta,
+      repayments: extra.repayments,
     };
   } catch (error: any) {
     clearTimeout(timeout);
