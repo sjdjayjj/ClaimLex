@@ -106,7 +106,7 @@ export function exportToExcel(
     ['加倍迟延履行期间债务利息', Number(s.delayInterestTarget.toFixed(2)), '末位清偿 (全部金钱债务清偿后再清偿)', delayNote],
     ['债权应计总标的 (未扣减还款)', Number(s.totalDebtTarget.toFixed(2)), '-', '以上各项本金、息费与诉讼费用合计'],
     [],
-    ['二、还款抵充与冲销分配'],
+    ['二、还款抵充与冲销分配汇总'],
     ['抵扣流向类别', '累计抵充金额 (元)', '占还款总额比例', '结清状态'],
     ['累计抵充诉讼与保全费用', Number(s.allocatedFeeTotal.toFixed(2)), s.totalRepaid > 0 ? `${((s.allocatedFeeTotal / s.totalRepaid) * 100).toFixed(1)}%` : '0%', s.remainingFee === 0 ? '已全部结清' : `尚欠￥${s.remainingFee.toFixed(2)}`],
     ['累计抵充利息/罚息/复利', Number(s.allocatedInterestTotal.toFixed(2)), s.totalRepaid > 0 ? `${((s.allocatedInterestTotal / s.totalRepaid) * 100).toFixed(1)}%` : '0%', s.remainingInterest === 0 ? '已全部结清' : `尚欠￥${s.remainingInterest.toFixed(2)}`],
@@ -166,6 +166,6 @@ export function exportToExcel(
   }
   
   const safeName = meta?.defendant ? `_${meta.defendant}` : '';
-  const safeCase = meta?.caseNo ? `_${meta.caseNo.replace(/[\u0028\u0029\uFF08\uFF09\u002F\\]/g, '_')}` : '';
+  const safeCase = meta?.caseNo ? `_${meta.caseNo.replace(/[\(\)（）\/\\]/g, '_')}` : '';
   XLSX.writeFile(wb, `司法级执行款清算证据清单${safeName}${safeCase}_${new Date().toISOString().split('T')[0]}.xlsx`);
 }

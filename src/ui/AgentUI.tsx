@@ -301,6 +301,9 @@ export const AgentUI: React.FC = () => {
         penaltyMultiple: 1.5,
         compoundMode: 'INT_AND_PENALTY',
         delayInterestEnabled: true,
+        deductionStrategy: 'LEGAL_EXPENSE_FIRST',
+        litigationFee: 0,
+        preservationFee: 0,
       };
 
       if (!analysisResult) {
@@ -353,6 +356,9 @@ export const AgentUI: React.FC = () => {
       penaltyMultiple: 1.5,
       compoundMode: 'INT_AND_PENALTY',
       delayInterestEnabled: true,
+      deductionStrategy: 'LEGAL_EXPENSE_FIRST',
+      litigationFee: 0,
+      preservationFee: 0,
     };
 
     if (!analysisResult) {
@@ -514,6 +520,9 @@ export const AgentUI: React.FC = () => {
       penaltyMultiple: 1.5,
       compoundMode: 'INT_AND_PENALTY',
       delayInterestEnabled: true,
+      deductionStrategy: 'LEGAL_EXPENSE_FIRST',
+      litigationFee: firstClient.litigationFee || 0,
+      preservationFee: firstClient.preservationFee || 0,
     };
 
     const mockAnalysis: ParsedAnalysisResult = {
@@ -558,6 +567,8 @@ export const AgentUI: React.FC = () => {
       principal: roundToFen(client.principal),
       baseInterest: roundToFen(client.baseInterest),
       basePenalty: roundToFen(client.basePenalty),
+      litigationFee: roundToFen(client.litigationFee || 0),
+      preservationFee: roundToFen(client.preservationFee || 0),
       baseDate: client.cutoffDate || currentParams.baseDate,
     };
 
@@ -637,7 +648,7 @@ export const AgentUI: React.FC = () => {
   const handleParamChange = (field: keyof CalculationParams, value: any) => {
     if (!params) return;
     let cleanVal = value;
-    if (['principal', 'baseInterest', 'basePenalty'].includes(field)) {
+    if (['principal', 'baseInterest', 'basePenalty', 'litigationFee', 'preservationFee'].includes(field)) {
       cleanVal = roundToFen(Number(value) || 0);
     }
     const updated = { ...params, [field]: cleanVal };
@@ -1347,6 +1358,36 @@ export const AgentUI: React.FC = () => {
                       </div>
 
                       <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                          <span>案件受理费 (元)</span>
+                          <span className="text-[10px] text-blue-400 font-normal">诉讼从债务</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={params.litigationFee || 0}
+                          onChange={(e) => handleParamChange('litigationFee', parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                          <span>保全费/执行费 (元)</span>
+                          <span className="text-[10px] text-blue-400 font-normal">固定费用</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={params.preservationFee || 0}
+                          onChange={(e) => handleParamChange('preservationFee', parseFloat(e.target.value) || 0)}
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
                         <label className="block text-[11px] font-semibold text-slate-400">历史欠付利息 (元)</label>
                         <input
                           type="number"
@@ -1366,6 +1407,25 @@ export const AgentUI: React.FC = () => {
                           onChange={(e) => handleParamChange('basePenalty', parseFloat(e.target.value) || 0)}
                           className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-mono"
                         />
+                      </div>
+
+                      <div className="space-y-1 md:col-span-2">
+                        <label className="block text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                          <span>还款抵扣策略 (Waterfall 清偿顺序)</span>
+                          <span className="text-[10px] text-emerald-400 font-normal">多模式抵充引擎</span>
+                        </label>
+                        <select
+                          value={params.deductionStrategy || 'LEGAL_EXPENSE_FIRST'}
+                          onChange={(e) => handleParamChange('deductionStrategy', e.target.value as any)}
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-white font-medium focus:border-blue-500"
+                        >
+                          <option value="LEGAL_EXPENSE_FIRST">
+                            选项 1：法定清偿顺序（民法典561条: 费用 → 欠息罚息 → 本金 → 迟延金）【推荐】
+                          </option>
+                          <option value="COMMERCIAL_PRINCIPAL_FIRST">
+                            选项 2：商业优先冲本模式（协商重组场景: 全额优先冲本金 → 罚息利息 → 费用 → 迟延金）
+                          </option>
+                        </select>
                       </div>
 
                       <div className="space-y-1">
@@ -1468,11 +1528,15 @@ export const AgentUI: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 px-1">
-                      <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>
-                        业务说明：依《最高法关于执行程序中计算迟延履行利息解释》，迟延履行金自文书确定的履行期届满之日起算。由于该日期依送达回证确定、不记载于PDF中，需手工填入；未填时默认从基准日起算。
-                      </span>
+                    <div className="text-[11px] text-slate-400 space-y-1 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80">
+                      <div className="flex items-center gap-1.5 font-medium text-slate-300">
+                        <Info className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                        <span>合规清算与执行分配规则指引：</span>
+                      </div>
+                      <div className="pl-5 text-slate-400 leading-relaxed space-y-0.5">
+                        <p>• <strong>加倍迟延履行金</strong>：依据法释〔2014〕8号第一条，计算基数仅限除一般利息外的金钱债务（本金及诉讼保全费），严禁利滚利；本金及固定费用清偿完毕时自动触发基数归零熔断机制，停止计提迟延金。</p>
+                        <p>• <strong>还款抵扣策略</strong>：法定清偿顺序依据《民法典》第561条及执行解释第4条，先费用、次欠息罚息、再本金、最后加倍迟延利息；商业优先冲本模式优先快速压降本金以节约罚息。</p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1547,14 +1611,24 @@ export const AgentUI: React.FC = () => {
                     <div className="text-[10px] md:text-[11px] text-slate-500">滚动欠息复利</div>
                   </div>
 
-                  <div className="p-3 md:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1">
+                  <div className="p-3 md:p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5">
                     <div className="flex items-center justify-between text-indigo-400 text-[11px] font-medium">
                       <span className="truncate">迟延履行加倍金</span>
                       <Clock className="w-3 h-3 text-indigo-400 flex-shrink-0" />
                     </div>
                     <div className="text-base md:text-xl font-bold text-indigo-400 truncate">￥{formatMoney(result.delayInterest)}</div>
-                    <div className="text-[10px] md:text-[11px] text-slate-500 truncate">
-                      {params?.executionDueDate ? `自届满日 ${params.executionDueDate} 起算` : '日万分之 1.75'}
+                    {result.delayTerminated ? (
+                      <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-950 text-amber-300 border border-amber-600/60">
+                        <AlertCircle className="w-2.5 h-2.5" />
+                        基数已清零熔断 (停止计提)
+                      </div>
+                    ) : (
+                      <div className="text-[10px] md:text-[11px] text-slate-500 truncate">
+                        {params?.executionDueDate ? `自届满日 ${params.executionDueDate} 起算` : '日万分之 1.75'}
+                      </div>
+                    )}
+                    <div className="text-[9.5px] text-slate-400 leading-tight pt-1 border-t border-slate-800/80">
+                      依据法释〔2014〕8号第一条，本金及固定金钱债务清偿完毕后，不再计提加倍迟延利息
                     </div>
                   </div>
 
@@ -1587,49 +1661,273 @@ export const AgentUI: React.FC = () => {
                     <table className="min-w-full divide-y divide-slate-800 text-xs text-left">
                       <thead className="bg-slate-950/80 text-slate-300 font-semibold uppercase tracking-wider">
                         <tr>
-                          <th className="px-3.5 py-3 text-center w-12">序号</th>
-                          <th className="px-3.5 py-3">分段区间</th>
-                          <th className="px-3.5 py-3 text-right">实际天数</th>
-                          <th className="px-3.5 py-3 text-right">对应基准/LPR</th>
-                          <th className="px-3.5 py-3 text-right">执行罚息年利率</th>
-                          <th className="px-3.5 py-3 text-right">计息本金基数</th>
-                          <th className="px-3.5 py-3 text-right">本段利息/罚息</th>
-                          <th className="px-3.5 py-3 text-right">本段复利</th>
-                          <th className="px-3.5 py-3 text-right">迟延履行金</th>
-                          <th className="px-3.5 py-3 text-center">事件说明 / 还款</th>
-                          <th className="px-3.5 py-3 text-right font-bold text-white">区间小计(元)</th>
+                          <th className="px-3 py-3 text-center w-10">序号</th>
+                          <th className="px-3 py-3">分段区间</th>
+                          <th className="px-2.5 py-3 text-right">天数</th>
+                          <th className="px-2.5 py-3 text-right">基准/LPR</th>
+                          <th className="px-2.5 py-3 text-right">罚息年利率</th>
+                          <th className="px-3 py-3 text-right">计息本金</th>
+                          <th className="px-3 py-3 text-right">迟延金基数(法释8号)</th>
+                          <th className="px-3 py-3 text-right">利息/罚息</th>
+                          <th className="px-2.5 py-3 text-right">复利</th>
+                          <th className="px-3 py-3 text-right">迟延履行金</th>
+                          <th className="px-3 py-3 text-center">事件说明 / 还款抵充</th>
+                          <th className="px-3 py-3 text-right font-bold text-white">区间小计(元)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
                         {result.intervals.map((row, idx) => (
                           <tr key={idx} className="hover:bg-blue-950/20 transition-colors">
-                            <td className="px-3.5 py-2.5 text-center text-slate-500 font-mono">{idx + 1}</td>
-                            <td className="px-3.5 py-2.5 font-medium text-slate-200">{row.start} 至 {row.end}</td>
-                            <td className="px-3.5 py-2.5 text-right font-bold text-slate-300">{row.days}</td>
-                            <td className="px-3.5 py-2.5 text-right text-blue-400 font-mono font-medium">{row.baseRate.toFixed(2)}%</td>
-                            <td className="px-3.5 py-2.5 text-right text-amber-400 font-mono font-bold">{row.penaltyRate.toFixed(4)}%</td>
-                            <td className="px-3.5 py-2.5 text-right text-slate-300 font-mono">￥{formatMoney(row.principal)}</td>
-                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{formatMoney(row.interest)}</td>
-                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{formatMoney(row.compound)}</td>
-                            <td className="px-3.5 py-2.5 text-right text-slate-200 font-mono">￥{formatMoney(row.delay)}</td>
-                            <td className="px-3.5 py-2.5 text-center whitespace-nowrap">
-                              {row.repaidTotal ? (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950 text-emerald-300 border border-emerald-700/60 inline-flex items-center gap-1">
-                                  <ArrowDownCircle className="w-3 h-3" />
-                                  冲减还款 ￥{formatMoney(row.repaidTotal)}
+                            <td className="px-3 py-2 text-center text-slate-500 font-mono">{idx + 1}</td>
+                            <td className="px-3 py-2 font-medium text-slate-200 whitespace-nowrap">{row.start} 至 {row.end}</td>
+                            <td className="px-2.5 py-2 text-right font-bold text-slate-300">{row.days}</td>
+                            <td className="px-2.5 py-2 text-right text-blue-400 font-mono font-medium">{row.baseRate.toFixed(2)}%</td>
+                            <td className="px-2.5 py-2 text-right text-amber-400 font-mono font-bold">{row.penaltyRate.toFixed(4)}%</td>
+                            <td className="px-3 py-2 text-right text-slate-300 font-mono">￥{formatMoney(row.principal)}</td>
+                            <td className="px-3 py-2 text-right font-mono">
+                              {row.isDelayTerminated ? (
+                                <span className="text-amber-400/90 text-[11px] inline-flex items-center gap-0.5" title="依据法释〔2014〕8号第一条，基数已清零熔断">
+                                  <AlertCircle className="w-2.5 h-2.5" /> 熔断(￥0.00)
                                 </span>
+                              ) : (
+                                <span className="text-indigo-300">￥{formatMoney(row.delayBase)}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-200 font-mono">￥{formatMoney(row.interest)}</td>
+                            <td className="px-2.5 py-2 text-right text-slate-200 font-mono">￥{formatMoney(row.compound)}</td>
+                            <td className="px-3 py-2 text-right text-slate-200 font-mono">
+                              {row.isDelayTerminated && row.delay === 0 ? (
+                                <span className="text-slate-500">￥0.00</span>
+                              ) : (
+                                <span className="text-indigo-300 font-medium">￥{formatMoney(row.delay)}</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-center whitespace-nowrap">
+                              {row.repaidTotal ? (
+                                <div className="inline-flex flex-col items-center gap-0.5">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950 text-emerald-300 border border-emerald-700/60 inline-flex items-center gap-1">
+                                    <ArrowDownCircle className="w-3 h-3" />
+                                    冲减还款 ￥{formatMoney(row.repaidTotal)}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400">
+                                    {[
+                                      row.repaidFee ? `费￥${formatMoney(row.repaidFee)}` : null,
+                                      row.repaidInterest ? `息￥${formatMoney(row.repaidInterest)}` : null,
+                                      row.repaidPrincipal ? `本￥${formatMoney(row.repaidPrincipal)}` : null,
+                                      row.repaidDelay ? `迟￥${formatMoney(row.repaidDelay)}` : null,
+                                    ].filter(Boolean).join(' | ')}
+                                  </span>
+                                </div>
                               ) : (
                                 <span className="text-[10px] text-slate-500 font-normal">
                                   {row.eventDesc || '调息分段'}
                                 </span>
                               )}
                             </td>
-                            <td className="px-3.5 py-2.5 text-right font-bold text-emerald-400 font-mono">￥{formatMoney(row.subtotal)}</td>
+                            <td className="px-3 py-2 text-right font-bold text-emerald-400 font-mono">￥{formatMoney(row.subtotal)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+                </div>
+
+                {/* 需求2核心产物：《执行款分配与结清确认表》（法院司法级证据清单） */}
+                <div className="rounded-xl border border-blue-900/60 bg-gradient-to-b from-slate-950/90 to-blue-950/30 p-5 space-y-4 shadow-xl">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-blue-900/40">
+                    <div className="flex items-center gap-2">
+                      <Scale className="w-5 h-5 text-blue-400" />
+                      <div>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          执行款分配与结清确认表
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-900/60 text-blue-300 border border-blue-700/60">
+                            司法级对账证据
+                          </span>
+                        </h3>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          遵循《民法典》第561条法定清偿顺序与最高法《关于执行程序中计算迟延履行期间的债务利息若干问题的解释》（法释〔2014〕8号）
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-900 border border-slate-700 text-slate-300">
+                        抵扣模式：{result.deductionStrategy === 'COMMERCIAL_PRINCIPAL_FIRST' ? '商业优先冲本' : '法定清偿顺序(推荐)'}
+                      </span>
+                      {result.settlement.isFullySettled ? (
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-900/60 text-emerald-300 border border-emerald-600/60 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> 债务全额结清
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-900/50 text-red-300 border border-red-700/60">
+                          结欠净额 ￥{formatMoney(result.netDebt)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 三大对账模块：执行标的池 vs 还款抵充流向 vs 最终结欠净额 */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    {/* 1. 标的项目池 */}
+                    <div className="bg-slate-900/70 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <div className="font-bold text-slate-200 flex items-center justify-between pb-1.5 border-b border-slate-800">
+                        <span>一、执行标的清算池</span>
+                        <span className="text-[10px] text-slate-400">应计总额</span>
+                      </div>
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex justify-between text-slate-300">
+                          <span>生效裁判借款本金：</span>
+                          <span className="font-mono font-medium">￥{formatMoney(result.settlement.principalTarget)}</span>
+                        </div>
+                        <div className="flex justify-between text-blue-300">
+                          <span>案件受理费 (诉讼费)：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.litigationFeeTarget)}</span>
+                        </div>
+                        <div className="flex justify-between text-blue-300">
+                          <span>保全费 / 执行费：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.preservationFeeTarget)}</span>
+                        </div>
+                        <div className="flex justify-between text-amber-300">
+                          <span>期初历史欠息与罚复利：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.baseInterestTarget + result.settlement.basePenaltyTarget)}</span>
+                        </div>
+                        <div className="flex justify-between text-amber-300">
+                          <span>期间新发生利息/罚息：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.newPenaltyTarget)}</span>
+                        </div>
+                        <div className="flex justify-between text-amber-300">
+                          <span>期间新发生复利：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.newCompoundTarget)}</span>
+                        </div>
+                        <div className="flex justify-between text-indigo-300">
+                          <span>加倍迟延履行利息：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.delayInterestTarget)}</span>
+                        </div>
+                        <div className="flex justify-between text-white font-bold pt-1 border-t border-slate-800 text-xs">
+                          <span>应计债务总标的：</span>
+                          <span className="font-mono text-emerald-400">￥{formatMoney(result.settlement.totalDebtTarget)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 2. 还款抵充分配汇总 */}
+                    <div className="bg-slate-900/70 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <div className="font-bold text-slate-200 flex items-center justify-between pb-1.5 border-b border-slate-800">
+                        <span>二、还款抵充与冲销分配</span>
+                        <span className="text-[10px] text-emerald-400">流水抵扣</span>
+                      </div>
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex justify-between text-slate-300">
+                          <span>累计抵充诉讼/保全费：</span>
+                          <span className="font-mono text-emerald-400 font-medium">￥{formatMoney(result.settlement.allocatedFeeTotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-300">
+                          <span>累计抵充利息/罚复利：</span>
+                          <span className="font-mono text-emerald-400 font-medium">￥{formatMoney(result.settlement.allocatedInterestTotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-300">
+                          <span>累计抵充借款本金：</span>
+                          <span className="font-mono text-emerald-400 font-medium">￥{formatMoney(result.settlement.allocatedPrincipalTotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-300">
+                          <span>累计抵充迟延履行金：</span>
+                          <span className="font-mono text-emerald-400 font-medium">￥{formatMoney(result.settlement.allocatedDelayTotal)}</span>
+                        </div>
+                        {result.settlement.surplusTotal > 0 && (
+                          <div className="flex justify-between text-purple-300">
+                            <span>结清超额溢缴款：</span>
+                            <span className="font-mono">￥{formatMoney(result.settlement.surplusTotal)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-white font-bold pt-1 border-t border-slate-800 text-xs">
+                          <span>累计入账还款总额：</span>
+                          <span className="font-mono text-emerald-400">￥{formatMoney(result.settlement.totalRepaid)}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 pt-1 leading-tight">
+                          清偿顺位依据：{result.deductionStrategy === 'COMMERCIAL_PRINCIPAL_FIRST' ? '全额先充本金 -> 欠息 -> 费用 -> 迟延金' : '按民法典第561条：费用 -> 欠息 -> 本金 -> 迟延金'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. 最终结欠净额 */}
+                    <div className="bg-slate-900/70 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <div className="font-bold text-slate-200 flex items-center justify-between pb-1.5 border-b border-slate-800">
+                        <span>三、最终执行结欠确认</span>
+                        <span className="text-[10px] text-red-400">申请执行净额</span>
+                      </div>
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex justify-between text-slate-300">
+                          <span>尚欠借款本金：</span>
+                          <span className="font-mono font-medium">￥{formatMoney(result.settlement.remainingPrincipal)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-300">
+                          <span>尚欠诉讼/保全费：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.remainingFee)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-300">
+                          <span>尚欠利息/罚复利：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.remainingInterest)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-300">
+                          <span>尚欠加倍迟延金：</span>
+                          <span className="font-mono">￥{formatMoney(result.settlement.remainingDelay)}</span>
+                        </div>
+                        <div className="flex justify-between text-white font-bold pt-1 border-t border-slate-800 text-xs">
+                          <span>申请执行结欠净额：</span>
+                          <span className="font-mono text-red-400 text-sm">￥{formatMoney(result.settlement.netDebtTotal)}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 pt-1 leading-tight">
+                          {result.settlement.delayTerminated ? (
+                            <span className="text-amber-300">★ 迟延金基数归零已熔断，后续不再滋生加倍迟延利息</span>
+                          ) : (
+                            <span>本金及固定费用清偿日前，迟延金依实际天数持续计提</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 若有单笔还款流水，展示流水逐笔抵充分配明细表 */}
+                  {result.settlement.allocations.length > 0 && (
+                    <div className="space-y-2 pt-2">
+                      <div className="flex justify-between items-center text-xs font-semibold text-slate-300">
+                        <span>银行扣款流水逐笔抵充分配明细清单（共 {result.settlement.allocations.length} 笔）：</span>
+                        <span className="text-[11px] text-slate-500 font-normal">严格按 Waterfall 顺序冲减各项债权</span>
+                      </div>
+                      <div className="overflow-x-auto rounded-lg border border-slate-800">
+                        <table className="min-w-full divide-y divide-slate-800 text-xs text-left">
+                          <thead className="bg-slate-950 text-slate-300">
+                            <tr>
+                              <th className="px-3 py-2 text-center w-10">序号</th>
+                              <th className="px-3 py-2">还款日期</th>
+                              <th className="px-3 py-2">交易流水号</th>
+                              <th className="px-3 py-2 text-right">还款金额</th>
+                              <th className="px-3 py-2 text-right text-blue-300">抵充费用</th>
+                              <th className="px-3 py-2 text-right text-amber-300">抵充欠息</th>
+                              <th className="px-3 py-2 text-right text-emerald-300">抵充本金</th>
+                              <th className="px-3 py-2 text-right text-indigo-300">抵充迟延金</th>
+                              <th className="px-3 py-2 text-right text-slate-400">溢缴款</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/60 bg-slate-900/30">
+                            {result.settlement.allocations.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-slate-800/40">
+                                <td className="px-3 py-1.5 text-center text-slate-500 font-mono">{idx + 1}</td>
+                                <td className="px-3 py-1.5 font-medium text-slate-200">{item.date}</td>
+                                <td className="px-3 py-1.5 font-mono text-slate-400">{item.serialNo || '-'}</td>
+                                <td className="px-3 py-1.5 text-right font-mono font-bold text-white">￥{formatMoney(item.amount)}</td>
+                                <td className="px-3 py-1.5 text-right font-mono text-blue-300">{item.allocatedFee > 0 ? `￥${formatMoney(item.allocatedFee)}` : '-'}</td>
+                                <td className="px-3 py-1.5 text-right font-mono text-amber-300">{item.allocatedInterest > 0 ? `￥${formatMoney(item.allocatedInterest)}` : '-'}</td>
+                                <td className="px-3 py-1.5 text-right font-mono text-emerald-300">{item.allocatedPrincipal > 0 ? `￥${formatMoney(item.allocatedPrincipal)}` : '-'}</td>
+                                <td className="px-3 py-1.5 text-right font-mono text-indigo-300">{item.allocatedDelay > 0 ? `￥${formatMoney(item.allocatedDelay)}` : '-'}</td>
+                                <td className="px-3 py-1.5 text-right font-mono text-slate-400">{item.surplusAmount > 0 ? `￥${formatMoney(item.surplusAmount)}` : '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1710,19 +2008,29 @@ export const AgentUI: React.FC = () => {
 
               <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
                 <h3 className="font-bold text-indigo-400 text-sm flex items-center gap-1.5">
-                  <Clock className="w-4 h-4" /> 3. 加倍迟延履行期间债务利息
+                  <Clock className="w-4 h-4" /> 3. 加倍迟延履行利息合规口径 (法释〔2014〕8号)
                 </h3>
                 <p className="text-slate-300 leading-relaxed">
-                  依据《中华人民共和国民事诉讼法》第二百六十四条及最高法《关于执行程序中计算迟延履行期间的债务利息若干问题的解释》，加倍部分债务利息计付公式为：<strong>尚未清偿的生效法律文书确定的金钱债务 × 日万分之一点七五 × 迟延履行天数</strong>。
+                  严格遵循《民事诉讼法》第264条及法释〔2014〕8号第一条：<strong>加倍部分债务利息 = 尚未清偿的生效法律文书确定的除一般债务利息之外的金钱债务 × 日万分之1.75 × 迟延天数</strong>。计息基数仅限借款本金及判决确认的诉讼保全等固定费用，<strong>严禁将一般利息、罚息、复利作为计提基数（杜绝利滚利）</strong>。当冲减结算后本金及固定费用清零时，立即触发<strong>基数归零熔断机制</strong>，日增量置为 0。
                 </p>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-                <h3 className="font-bold text-emerald-400 text-sm flex items-center gap-1.5">
-                  <Download className="w-4 h-4" /> 4. 证据链条交付与 Excel 质证底稿
+                <h3 className="font-bold text-purple-400 text-sm flex items-center gap-1.5">
+                  <Scale className="w-4 h-4" /> 4. 多模式还款抵充顺序引擎 (Waterfall 机制)
                 </h3>
                 <p className="text-slate-300 leading-relaxed">
-                  导出的 Excel 文件遵循<strong>司法证据“法院蓝”制式标准</strong>，包含案卷基本信息、裁判主文摘要、6大汇总指标以及每一天的分段利息发生额与公式溯源，满足执行立案、庭审举证、破产债权申报的严格要求。
+                  <strong>法定清偿顺序（推荐）</strong>：依《民法典》第561条及法释〔2014〕8号第四条，还款优先冲减费用及实现债权费用，再充一般利息/罚息/复利，最后冲减本金；全部主债权清偿后再冲减加倍迟延利息。<br/>
+                  <strong>商业优先冲本模式</strong>：适用于债务重组与协商场景，还款全额优先冲抵尚欠本金，快速降低计息基数以减免罚息，余款再冲罚息利息与迟延金。
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2 md:col-span-2">
+                <h3 className="font-bold text-emerald-400 text-sm flex items-center gap-1.5">
+                  <Download className="w-4 h-4" /> 5. 司法级证据链条交付与《执行款分配与结清确认表》
+                </h3>
+                <p className="text-slate-300 leading-relaxed">
+                  导出的 Excel 文件遵循<strong>司法证据“法院蓝”制式标准</strong>，除分段利息流水外，特别生成独立的《执行款分配与结清确认表》Sheet，包含标的项目池、还款抵充流向统计、最终执行结欠净额及每笔还款流水逐笔抵充分配明细，满足执行立案、庭审质证与破产对账的严苛要求。
                 </p>
               </div>
             </div>
