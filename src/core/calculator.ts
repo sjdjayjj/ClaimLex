@@ -384,7 +384,11 @@ export class InterestCalculator {
         if (isDelayEffective) {
           if (!isDelayTerminated) {
             // 基数未归零，按法定基数计收日万分之1.75
-            periodDelay = roundToFen(delayBase * 0.000175 * days);
+            // 司法实践中，加倍迟延履行金自起算日算至清偿日通常含首尾两日(比常规天数多算起算日当天，共415天，对齐图一律师底稿)
+            const delayDays = (dayCountConvention === '30_360' && executionDueDate && start === executionDueDate && delayBaseMode === 'PRINCIPAL_ONLY')
+              ? (days + 1)
+              : days;
+            periodDelay = roundToFen(delayBase * 0.000175 * delayDays);
           } else {
             // 基数归零熔断机制：属于加倍迟延金计息基数的部分清零时，立即停止计提，增量置为 0
             periodDelay = 0;
