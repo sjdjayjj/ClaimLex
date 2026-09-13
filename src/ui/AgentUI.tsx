@@ -658,22 +658,14 @@ export const AgentUI: React.FC = () => {
     }
   };
 
-  // 人机协同交互：支持微调任何参数并实时热重算
+  // 人机协同交互：支持微调任何参数并实时热重算（携带勾选中的还款流水）
   const handleParamChange = (field: keyof CalculationParams, value: any) => {
     if (!params) return;
     let cleanVal = value;
     if (['principal', 'baseInterest', 'basePenalty', 'litigationFee', 'preservationFee'].includes(field)) {
       cleanVal = roundToFen(Number(value) || 0);
     }
-    const updated = { ...params, [field]: cleanVal };
-    setParams(updated);
-    try {
-      const calculator = new InterestCalculator();
-      const calcResult = calculator.calculate(updated);
-      setResult(calcResult);
-    } catch (err) {
-      console.error(err);
-    }
+    triggerRecalculate({ ...params, [field]: cleanVal });
   };
 
   // 能力卡片配置（对应 3 个 Tab 视图）
@@ -1496,6 +1488,10 @@ export const AgentUI: React.FC = () => {
                               <span>
                                 累计冲减本金：
                                 <strong className="text-ink font-mono ml-1">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.principal, 0))}</strong>
+                              </span>
+                              <span>
+                                累计冲减利息罚复利：
+                                <strong className="text-state-warning font-mono ml-1">￥{formatMoney(repayments.filter(r => r.selected !== false).reduce((s, r) => s + r.interest + r.penalty + r.compound, 0))}</strong>
                               </span>
                             </div>
                           </div>
