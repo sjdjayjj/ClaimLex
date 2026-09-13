@@ -428,7 +428,7 @@ export const AgentUI: React.FC = () => {
       defendant: '秦世英',
       reasoning: '【司法判决与扣款回单全流程对账】：案号(2023)粤0304民初16637号，贷款到期日 2019-12-10，本金 258,700 元，合同执行年利率 7.18%，罚息利率 10.77%（上浮50%），计息规则严格采用 30/360（每月按30天/年360天，DAYS360）。到期后发生 9 笔还本流水，2023-06-20 判决查明本金为 147,321.69 元、暂计罚息 51,301.75 元；本金于 2025-05-22 全部还清（本金清零熔断停止计提加倍迟延履行金）。迟延金从 2024-03-28 计至 2025-05-22 共 415 天。',
       keyPoints: [
-        '合同执行年利率固定 7.18%，逾期罚息按上浮50%为 10.77%，计息基准采用 30/360 规则与图一律师明细表完全对齐',
+        '合同执行年利率固定 7.18%，逾期罚息按上浮50%为 10.77%，计息基准采用 30/360',
         '判决确认案件受理费 ￥3,529.56、保全费 ￥1,327.38 并入执行标的池',
         '依据法释〔2014〕8号第一条，加倍迟延金自 2024-03-28 计至 2025-05-22 本金清偿日熔断终止',
         '扣除银行已扣罚息 ￥15,150.82 后，最终净债权本息与费用合计 ￥89,239.04'
@@ -1620,7 +1620,7 @@ export const AgentUI: React.FC = () => {
                           onChange={(e) => handleParamChange('dayCountConvention', e.target.value as any)}
                           className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-amber-300 font-medium focus:border-blue-500"
                         >
-                          <option value="30_360">30/360（每月按30天/年360天，图一律师明细表算法）</option>
+                          <option value="30_360">30/360（每月按30天/年360天）</option>
                           <option value="ACT_360">实际天数/360（ACT/360，法定公历实际天数）</option>
                           <option value="ACT_365">实际天数/365（ACT/365，常规公历天数）</option>
                         </select>
@@ -1655,7 +1655,7 @@ export const AgentUI: React.FC = () => {
                           }}
                           className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-amber-300 font-medium focus:border-blue-500"
                         >
-                          <option value="YES_PRINCIPAL">计收 (日万分之1.75，仅本金为基数，对齐图一律师表)</option>
+                          <option value="YES_PRINCIPAL">计收 (日万分之1.75，仅本金为基数)</option>
                           <option value="YES_ALL">计收 (日万分之1.75，本金+诉讼保全费，严格法释8号)</option>
                           <option value="NO">暂不计收加倍迟延履行金</option>
                         </select>

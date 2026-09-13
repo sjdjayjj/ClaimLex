@@ -363,7 +363,7 @@ export class InterestCalculator {
 
       // 5. 迟延履行金合规化改造（严格遵循法释〔2014〕8号第一条）
       // 法释〔2014〕8号第一条：加倍部分债务利息=尚未清偿的生效法律文书确定的除一般债务利息之外的金钱债务×日万分之1.75×迟延履行期间
-      // 模式 A（PRINCIPAL_ONLY）：仅以尚欠本金为基数（司法实践主流、律师底稿标准，对齐图一算法：本金清零即彻底终止迟延金）
+      // 模式 A（PRINCIPAL_ONLY）：仅以尚欠本金为基数（司法实践主流：本金清零即彻底终止迟延金）
       // 模式 B（PRINCIPAL_AND_FEES）：本金余额 + 判决确认的诉讼保全等固定费用余额（严格法释8号理论口径）
       const delayBase = (delayBaseMode === 'PRINCIPAL_AND_FEES')
         ? roundToFen(Math.max(0, currentPrincipal + currentFee))
@@ -384,7 +384,7 @@ export class InterestCalculator {
         if (isDelayEffective) {
           if (!isDelayTerminated) {
             // 基数未归零，按法定基数计收日万分之1.75
-            // 司法实践中，加倍迟延履行金自起算日算至清偿日通常含首尾两日(比常规天数多算起算日当天，共415天，对齐图一律师底稿)
+            // 司法实践中，加倍迟延履行金自起算日算至清偿日通常含首尾两日
             const delayDays = (dayCountConvention === '30_360' && executionDueDate && start === executionDueDate && delayBaseMode === 'PRINCIPAL_ONLY')
               ? (days + 1)
               : days;

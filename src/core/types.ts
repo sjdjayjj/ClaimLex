@@ -14,7 +14,7 @@ export type CompoundMode = 'INT_ONLY' | 'INT_AND_PENALTY' | 'NONE';
 
 /**
  * 计息天数与日利率折算基准（Day-Count Convention）
- * 30_360: 每月固定30天，每年360天（同 Excel DAYS360，中国金融借款司法实践与银行借据最常用标准，即图一律师表算法）
+ * 30_360: 每月固定30天，每年360天（同 Excel DAYS360，中国金融借款司法实践与银行借据最常用标准）
  * ACT_360: 实际公历天数 / 年基准360天
  * ACT_365: 实际公历天数 / 年基准365天
  */
@@ -22,7 +22,7 @@ export type DayCountConvention = '30_360' | 'ACT_360' | 'ACT_365';
 
 /**
  * 迟延履行金计息基数范围
- * PRINCIPAL_ONLY: 仅尚欠本金为基数（司法实践主流、律师底稿标准，对齐图一算法：本金清零即停止计提迟延金）
+ * PRINCIPAL_ONLY: 仅尚欠本金为基数（司法实践主流：本金清零即停止计提迟延金）
  * PRINCIPAL_AND_FEES: 本金 + 判决确认固定费用（诉讼费/保全费，法释〔2014〕8号理论口径）
  */
 export type DelayBaseMode = 'PRINCIPAL_ONLY' | 'PRINCIPAL_AND_FEES';
