@@ -1,6 +1,6 @@
 import { CalculationParams, RepaymentRecord } from '../core/types';
 import { roundToFen } from '../core/calculator';
-import { LLMConfig, ParsedAnalysisResult, BatchCaseClient } from './llmTypes';
+import { LLMConfig, ParsedAnalysisResult, BatchCaseClient, LLMPreset } from './llmTypes';
 import { parseRepaymentReceiptFromText, normalizeDate } from '../parser/repaymentReceiptParser';
 import { JUDGMENT_PARSER_PROMPT } from '../parser/prompt';
 import dayjs from 'dayjs';
