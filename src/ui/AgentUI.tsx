@@ -9,6 +9,7 @@ import { LLMConfigModal } from './LLMConfigModal';
 import { LLMConfig, ParsedAnalysisResult, BatchCaseClient } from '../services/llmTypes';
 import { loadLLMConfig, analyzeJudgmentWithLLM } from '../services/llmService';
 import { parseRepaymentReceiptFromText, SAMPLE_REPAYMENT_RECEIPT, normalizeDate } from '../parser/repaymentReceiptParser';
+import { desensitizeText, desensitizeReceiptMeta } from '../parser/desensitize';
 import dayjs from 'dayjs';
 import { 
   FileUp, 
@@ -274,7 +275,7 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
   const [parseProgressText, setParseProgressText] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-  const [extractStats, setExtractStats] = useState<{ pages: number; chars: number; filtered: number } | null>(null);
+  const [extractStats, setExtractStats] = useState<{ pages: number; chars: number; filtered: number; masked: number } | null>(null);
   const [scannedWarning, setScannedWarning] = useState(false);
   
   // 大模型与解析状态
@@ -339,14 +340,16 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
     setParseProgressText('正在读取并提取银行扣款回单 PDF 表格流水...');
     try {
       const extractRes = await extractTextFromPDF(file);
-      const parsedReceipt = parseRepaymentReceiptFromText(extractRes.text);
+      const parsedReceipt = parseRepaymentReceiptFromText(desensitizeText(extractRes.text).text);
       if (parsedReceipt.records.length === 0) {
         alert('未在上传的 PDF 中探测到格式化扣款明细流水，请核对是否为包含流水号与扣款金额的回单');
         return;
       }
 
-      setReceiptMeta(parsedReceipt.meta);
-      const baseDate = params?.baseDate || parsedReceipt.meta.loanDueDate || '2019-12-10';
+      // 回单 meta 中的借款人姓名/证件号强制脱敏
+      const safeMeta = desensitizeReceiptMeta(parsedReceipt.meta);
+      setReceiptMeta(safeMeta);
+      const baseDate = params?.baseDate || safeMeta.loanDueDate || '2019-12-10';
       const initializedRecords = parsedReceipt.records.map(r => ({
         ...r,
         selected: dayjs(r.date).isAfter(dayjs(baseDate)),
@@ -513,18 +516,25 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
         },
       });
 
-      setInputText(extractRes.text);
+      // 敏感信息强制脱敏：身份证号/手机号/账号/姓名，展示与后续送审均为脱敏文本
+      const des = desensitizeText(extractRes.text);
+      if (des.count > 0) {
+        setParseProgressText(`已自动脱敏 ${des.count} 处客户敏感信息...`);
+      }
+
+      setInputText(des.text);
       setExtractStats({
         pages: extractRes.totalPages,
         chars: extractRes.cleanResult.cleanedLength,
         filtered: extractRes.cleanResult.filteredLinesCount,
+        masked: des.count,
       });
 
-      // 智能探测是否同时包含银行贷款扣款明细回单
-      if (extractRes.text.includes('个人贷款扣款回单') || extractRes.text.includes('交易流水号') || extractRes.text.includes('归还本金')) {
-        const parsedReceipt = parseRepaymentReceiptFromText(extractRes.text);
+      // 智能探测是否同时包含银行贷款扣款明细回单（基于脱敏后文本解析）
+      if (des.text.includes('个人贷款扣款回单') || des.text.includes('交易流水号') || des.text.includes('归还本金')) {
+        const parsedReceipt = parseRepaymentReceiptFromText(des.text);
         if (parsedReceipt.records.length > 0) {
-          setReceiptMeta(parsedReceipt.meta);
+          setReceiptMeta(desensitizeReceiptMeta(parsedReceipt.meta));
           const baseDate = params?.baseDate || parsedReceipt.meta.loanDueDate || '2019-12-10';
           const recs = parsedReceipt.records.map(r => ({
             ...r,
@@ -687,8 +697,11 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
     setParseProgressText('初始化大模型客户端...');
 
     try {
+      // 0. 发送大模型前再次强制脱敏（覆盖手工粘贴等入口），确保行外传输零敏感明文
+      const safeInput = desensitizeText(inputText).text;
+
       // 1. 调用真实大模型完成文书解析与要素提取
-      const parsedData = await analyzeJudgmentWithLLM(inputText, llmConfig, (statusText) => {
+      const parsedData = await analyzeJudgmentWithLLM(safeInput, llmConfig, (statusText) => {
         setParseProgressText(statusText);
       });
 
@@ -1004,7 +1017,9 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                     )}
                     {extractStats && (
                       <span className="text-slate-500 text-[11px]">
-                        (共 {extractStats.pages} 页，过滤杂质噪音 {extractStats.filtered} 行)
+                        (共 {extractStats.pages} 页，过滤杂质噪音 {extractStats.filtered} 行
+                        {extractStats.masked > 0 && <>，<span className="text-emerald-400 font-medium">已脱敏 {extractStats.masked} 处敏感信息</span></>}
+                        )
                       </span>
                     )}
                   </div>
