@@ -184,7 +184,7 @@ export function parseRepaymentReceiptFromText(text: string): RepaymentReceiptPar
 }
 
 /**
- * 真实银行扣款回单样本数据（对应用户提供的深圳高新区支行 秦*英 个人贷款扣款回单）
+ * 银行扣款回单样本数据（对应用户提供的深圳高新区支行 秦某 个人贷款扣款回单，已脱敏）
  */
 export const SAMPLE_REPAYMENT_RECEIPT: RepaymentReceiptParseResult = {
   meta: {
@@ -194,7 +194,7 @@ export const SAMPLE_REPAYMENT_RECEIPT: RepaymentReceiptParseResult = {
     repaymentMethod: '到期还本定期还息',
     loanAmount: 258700.00,
     currency: '人民币元',
-    borrowerName: '秦*英',
+    borrowerName: '秦某',
     idType: '居民身份证',
     idNumber: '3****************2',
     loanStartDate: '2018-12-10',

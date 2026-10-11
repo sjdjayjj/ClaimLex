@@ -70,7 +70,7 @@ export interface RepaymentReceiptMeta {
   repaymentMethod?: string;   // 还款方式 (如 到期还本定期还息)
   loanAmount?: number;        // 贷款金额 (如 258700.00)
   currency?: string;          // 币种 (如 人民币元)
-  borrowerName?: string;      // 借款人名称 (如 秦*英)
+  borrowerName?: string;      // 借款人名称 (如 秦某)
   idType?: string;            // 证件种类 (如 居民身份证)
   idNumber?: string;          // 证件号码 (如 3****************2)
   loanStartDate?: string;     // 贷款起始日 (YYYY-MM-DD)

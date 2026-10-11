@@ -48,7 +48,8 @@ import {
   Filter,
   Trash2,
   PlusCircle,
-  CreditCard
+  CreditCard,
+  LogOut
 } from 'lucide-react';
 
 const SAMPLE_JUDGMENT = `【民事判决书摘录（广东省高级人民法院典型金融借贷案例）】
@@ -70,7 +71,7 @@ const SAMPLE_JUDGMENT = `【民事判决书摘录（广东省高级人民法院�
 const SAMPLE_BATCH_JUDGMENT = `【民事判决书摘录（深圳市福田区人民法院金融借款批量诉讼系列案）】
 案号：（2022）粤0304民初21154号等系列案
 原告：某某消费金融股份有限公司
-被告：谢添全、高俊胜、张立昕、钟良枢、朱乐冬、贺伟等借款人
+被告：谢某、高某、张某、钟某、朱某、贺某等借款人
 
 【裁判查明与认定事实】：
 原告某某消费金融公司与各被告在线分别签署《个人消费贷款授信合同》，约定贷款利率按借款发放日全国银行间同业拆借中心公布的1年期LPR执行并加收相应基点。借款人违约逾期的，自违约之日起按原借款执行利率的1.5倍加计逾期罚息；未按时支付的正常利息及罚息按前述罚息利率计收复利。
@@ -78,12 +79,12 @@ const SAMPLE_BATCH_JUDGMENT = `【民事判决书摘录（深圳市福田区人�
 
 附表一 原告诉讼请求附表 金额单位：元
 | 序号 | 案号 | 被告 | 性别 | 民族 | 身份证号码 | 身份证地址 | 本金余额 | 利息 | 罚息 | 复利 | 截息日期 | 案件受理费 | 保全费 |
-| 1 | (2022)粤0304民初21154号 | 谢添全 | 男 | 汉族 | 440981198803294918 | 广东省高州市东岸镇射坡大辟村30号 | 104869.00 | 0 | 17531.75 | 1379.15 | 2020-11-2 | 2775.60 | 1138.89 |
-| 2 | (2022)粤0304民初21157号 | 高俊胜 | 男 | 汉族 | 440106196609281897 | 广东省深圳市福田区国城花园2栋3107 | 300000.00 | 20338.27 | 28798.00 | 3976.47 | 2020-11-2 | 6596.70 | / |
-| 3 | (2022)粤0304民初21158号 | 张立昕 | 男 | 汉族 | 429001198501194835 | 湖北省随县小林镇小林店居委会十五组 | 68100.00 | 2264.29 | 5738.70 | 447.81 | 2020-11-2 | 1713.78 | 785.50 |
-| 4 | (2022)粤0304民初21160号 | 钟良枢 | 男 | 汉族 | 441424196808223294 | 广东省五华县岐岭镇龙水村松二 | 62300.00 | 4169.07 | 8020.02 | 1164.18 | 2020-11-2 | 1691.34 | / |
-| 5 | (2022)粤0304民初21164号 | 朱乐冬 | 男 | 汉族 | 420603197811081038 | 广东省深圳市罗湖区东门南路1021号阳光新干线家园A座903 | 130315.08 | 0 | 14931.64 | 817.01 | 2021-2-4 | 3221.28 | 1250.31 |
-| 6 | (2022)粤0304民初21165号 | 贺伟 | 男 | 汉族 | 413023198209086416 | 河南省信阳市浉河区董家河乡教育路318号 | 227800.00 | 6195.16 | 13357.46 | 783.81 | 2020-11-2 | 5022.04 | / |
+| 1 | (2022)粤0304民初21154号 | 谢某 | 男 | 汉族 | 4****************8 | 广东省高州市××镇××村××号 | 104869.00 | 0 | 17531.75 | 1379.15 | 2020-11-2 | 2775.60 | 1138.89 |
+| 2 | (2022)粤0304民初21157号 | 高某 | 男 | 汉族 | 4****************7 | 广东省深圳市福田区××小区××栋 | 300000.00 | 20338.27 | 28798.00 | 3976.47 | 2020-11-2 | 6596.70 | / |
+| 3 | (2022)粤0304民初21158号 | 张某 | 男 | 汉族 | 4****************5 | 湖北省随县××镇××组 | 68100.00 | 2264.29 | 5738.70 | 447.81 | 2020-11-2 | 1713.78 | 785.50 |
+| 4 | (2022)粤0304民初21160号 | 钟某 | 男 | 汉族 | 4****************4 | 广东省五华县××镇××村 | 62300.00 | 4169.07 | 8020.02 | 1164.18 | 2020-11-2 | 1691.34 | / |
+| 5 | (2022)粤0304民初21164号 | 朱某 | 男 | 汉族 | 4****************8 | 广东省深圳市罗湖区××路××号 | 130315.08 | 0 | 14931.64 | 817.01 | 2021-2-4 | 3221.28 | 1250.31 |
+| 6 | (2022)粤0304民初21165号 | 贺某 | 男 | 汉族 | 4****************6 | 河南省信阳市浉河区××乡××路××号 | 227800.00 | 6195.16 | 13357.46 | 783.81 | 2020-11-2 | 5022.04 | / |
 
 【判决主文】：
 一、各被告应于本判决生效之日起十日内向原告偿还附表一所列尚欠借款本金，并支付截至附表所列截息日期的利息、罚息及复利；
@@ -95,11 +96,11 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   {
     id: '1',
     caseNo: '(2023)粤0304民初16637号',
-    defendant: '秦世英',
+    defendant: '秦某',
     gender: '女',
     nation: '汉族',
     idCard: '3****************2',
-    idAddress: '广东省深圳市南山区',
+    idAddress: '广东省深圳市××区（已脱敏）',
     principal: 147321.69,
     baseInterest: 0,
     basePenalty: 51301.75,
@@ -119,11 +120,11 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   {
     id: '2',
     caseNo: '(2022)粤0304民初21154号',
-    defendant: '谢添全',
+    defendant: '谢某',
     gender: '男',
     nation: '汉族',
-    idCard: '440981198803294918',
-    idAddress: '广东省高州市东岸镇射坡大辟村30号',
+    idCard: '4****************8',
+    idAddress: '广东省高州市××镇××村××号',
     principal: 104869.00,
     baseInterest: 0,
     basePenalty: 17531.75,
@@ -140,11 +141,11 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   {
     id: '3',
     caseNo: '(2022)粤0304民初21157号',
-    defendant: '高俊胜',
+    defendant: '高某',
     gender: '男',
     nation: '汉族',
-    idCard: '440106196609281897',
-    idAddress: '广东省深圳市福田区国城花园2栋3107',
+    idCard: '4****************7',
+    idAddress: '广东省深圳市福田区××小区××栋',
     principal: 300000.00,
     baseInterest: 20338.27,
     basePenalty: 28798.00,
@@ -162,11 +163,11 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   {
     id: '4',
     caseNo: '(2022)粤0304民初21158号',
-    defendant: '张立昕',
+    defendant: '张某',
     gender: '男',
     nation: '汉族',
-    idCard: '429001198501194835',
-    idAddress: '湖北省随县小林镇小林店居委会十五组',
+    idCard: '4****************5',
+    idAddress: '湖北省随县××镇××组',
     principal: 68100.00,
     baseInterest: 2264.29,
     basePenalty: 5738.70,
@@ -184,11 +185,11 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   {
     id: '5',
     caseNo: '(2022)粤0304民初21160号',
-    defendant: '钟良枢',
+    defendant: '钟某',
     gender: '男',
     nation: '汉族',
-    idCard: '441424196808223294',
-    idAddress: '广东省五华县岐岭镇龙水村松二',
+    idCard: '4****************4',
+    idAddress: '广东省五华县××镇××村',
     principal: 62300.00,
     baseInterest: 4169.07,
     basePenalty: 8020.02,
@@ -205,11 +206,11 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   {
     id: '6',
     caseNo: '(2022)粤0304民初21164号',
-    defendant: '朱乐冬',
+    defendant: '朱某',
     gender: '男',
     nation: '汉族',
-    idCard: '420603197811081038',
-    idAddress: '广东省深圳市罗湖区东门南路1021号阳光新干线家园A座903',
+    idCard: '4****************8',
+    idAddress: '广东省深圳市罗湖区××路××号',
     principal: 130315.08,
     baseInterest: 0,
     basePenalty: 14931.64,
@@ -227,11 +228,11 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
   {
     id: '7',
     caseNo: '(2022)粤0304民初21159号',
-    defendant: '贺伟',
+    defendant: '贺某',
     gender: '男',
     nation: '汉族',
-    idCard: '420621198506197519',
-    idAddress: '湖北省襄阳市襄州区黄集镇毛营村六组25号',
+    idCard: '4****************9',
+    idAddress: '湖北省襄阳市襄州区××镇××组',
     principal: 200000.00,
     baseInterest: 0,
     basePenalty: 13357.46,
@@ -259,7 +260,14 @@ export const formatMoney = (val?: number | null): string => {
   });
 };
 
-export const AgentUI: React.FC = () => {
+export interface AgentUIProps {
+  /** 当前登录用户名（用于顶栏展示） */
+  sessionUsername?: string;
+  /** 退出登录回调 */
+  onLogout?: () => void;
+}
+
+export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) => {
   const [activeTab, setActiveTab] = useState<'agent' | 'rates' | 'guide'>('agent');
   const [inputText, setInputText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
@@ -390,7 +398,7 @@ export const AgentUI: React.FC = () => {
     }
   };
 
-  // 载入真实扣款回单样例（对应深圳高新区支行 秦世英 258,700 元贷款扣款回单与司法裁判标准）
+  // 载入扣款回单样例（对应深圳高新区支行 秦某 258,700 元贷款扣款回单与司法裁判标准，已脱敏）
   const handleLoadSampleReceipt = () => {
     setReceiptMeta(SAMPLE_REPAYMENT_RECEIPT.meta);
     const baseDate = '2019-12-10';
@@ -425,7 +433,7 @@ export const AgentUI: React.FC = () => {
       params: currentParams,
       caseNo: '(2023)粤0304民初16637号 (借据: 811032260373)',
       plaintiff: '某某商业银行股份有限公司深圳高新区支行',
-      defendant: '秦世英',
+      defendant: '秦某',
       reasoning: '【司法判决与扣款回单全流程对账】：案号(2023)粤0304民初16637号，贷款到期日 2019-12-10，本金 258,700 元，合同执行年利率 7.18%，罚息利率 10.77%（上浮50%），计息规则严格采用 30/360（每月按30天/年360天，DAYS360）。到期后发生 9 笔还本流水，2023-06-20 判决查明本金为 147,321.69 元、暂计罚息 51,301.75 元；本金于 2025-05-22 全部还清（本金清零熔断停止计提加倍迟延履行金）。迟延金从 2024-03-28 计至 2025-05-22 共 415 天。',
       keyPoints: [
         '合同执行年利率固定 7.18%，逾期罚息按上浮50%为 10.77%，计息基准采用 30/360',
@@ -594,9 +602,9 @@ export const AgentUI: React.FC = () => {
       defendant: `${firstClient.defendant} (附表第1位客户)`,
       reasoning: '【批量案件司法审查结论】：本案系针对多名借款人的批量系列案件。判决主文及附表分别载明了各被告姓名、案号、身份证、尚欠本金及利息罚息。【关键支持】：各借款人合同执行年利率（如7.18%、8.50%、6.80%或LPR浮动）与罚息上浮比例各自独立，系统已支持逐一读取并自动切换个人专属利率精准测算。',
       keyPoints: [
-        `共提取到附表内 ${SAMPLE_BATCH_CLIENTS.length} 位借款人清单（含秦世英、谢添全、高俊胜、张立昕、钟良枢、朱乐冬、贺伟等）`,
+        `共提取到附表内 ${SAMPLE_BATCH_CLIENTS.length} 位借款人清单（含秦某、谢某、高某、张某、钟某、朱某、贺某等）`,
         '每位借款人具有独立的合同年利率与罚息规则，切换借款人时自动重载该客户专属年利率',
-        '首位借款人秦世英对应图一律师计算明细表标准案卷（执行年利率7.18%，罚息10.77%，30/360规则）',
+        '首位借款人秦某对应图一律师计算明细表标准案卷（执行年利率7.18%，罚息10.77%，30/360规则）',
         '支持在下方【批量案件客户选择器】中自由点击切换指定客户进行独立清算与证据生成'
       ],
       isBatchCase: true,
@@ -808,6 +816,17 @@ export const AgentUI: React.FC = () => {
               >
                 <Printer className="w-4 h-4 text-slate-400" /> 打印底稿
               </button>
+
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-800/80 hover:bg-red-900/40 hover:border-red-800/60 text-slate-200 border border-slate-700/60 shadow-lg transition-all"
+                  title={sessionUsername ? `当前用户：${sessionUsername}，点击退出登录` : '退出登录'}
+                >
+                  <LogOut className="w-4 h-4 text-slate-400" />
+                  <span className="hidden sm:inline">{sessionUsername || '退出登录'}</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -912,7 +931,7 @@ export const AgentUI: React.FC = () => {
                   <button
                     onClick={handleLoadSampleReceipt}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-700/60 hover:bg-emerald-900/80 transition-all shadow-sm"
-                    title="载入银行个人贷款扣款回单明细流水示例（秦*英 25.87万元借款扣款表）"
+                    title="载入银行个人贷款扣款回单明细流水示例（秦某 25.87万元借款扣款表）"
                   >
                     <Receipt className="w-3.5 h-3.5 text-emerald-400" /> 载入扣款回单流水样例
                   </button>

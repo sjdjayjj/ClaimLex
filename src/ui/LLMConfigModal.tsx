@@ -252,15 +252,14 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({
                 type="text"
                 value={config.model}
                 onChange={e => setConfig({ ...config, model: e.target.value })}
-                placeholder="例如 gemini-3.8-flash, deepseek-chat, gpt-4o 等"
+                placeholder="例如 deepseek-flash、qwen-plus、moonshot-v1-32k 等"
                 className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-blue-500"
               />
               <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
                 <span className="text-slate-500">常用/最新模型快速填充:</span>
                 {[
-                  'gemini-3.8-flash',
-                  'deepseek-chat',
-                  'gpt-4o',
+                  'deepseek-flash',
+                  'deepseek-reasoner',
                   'qwen-plus',
                   'qwen-max',
                   'moonshot-v1-32k'
@@ -377,7 +376,7 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({
                       本地开发服务器代理转发 (消除浏览器跨域 CORS 拦截)
                     </div>
                     <div className="text-[11px] text-slate-400 mt-0.5">
-                      推荐开启。由本地 Node.js 开发服务代发请求，解决 Google Gemini、OpenAI 等官方接口在前端浏览器中的 CORS 跨域拦截与网络握手问题。
+                      推荐开启。由本地 Node.js 开发服务代发请求，解决部分官方接口在前端浏览器中的 CORS 跨域拦截与网络握手问题。
                     </div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer ml-3 shrink-0">

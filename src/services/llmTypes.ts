@@ -13,7 +13,7 @@ export interface HeaderItem {
  * 大模型 API 完整配置模型
  */
 export interface LLMConfig {
-  /** 配置名称/标签（如 DeepSeek V3、GPT-4o、通义千问等） */
+  /** 配置名称/标签（如 DeepSeek V3、通义千问等） */
   providerName: string;
   /** 完整 API URL 地址 (如 https://api.deepseek.com/chat/completions) */
   apiUrl: string;
@@ -21,7 +21,7 @@ export interface LLMConfig {
   apiVersion: string;
   /** 请求方法，通常为 POST */
   method: 'POST' | 'PUT';
-  /** 模型名称标识 (如 deepseek-chat, gpt-4o, qwen-plus) */
+  /** 模型名称标识 (如 deepseek-flash, qwen-plus) */
   model: string;
   /** API 认证密钥 (Bearer Token 或 API Key) */
   apiKey: string;
@@ -43,7 +43,7 @@ export interface BatchCaseClient {
   id: string;
   /** 该客户对应的具体子案号 (例如 (2022)粤0304民初21154号) */
   caseNo?: string;
-  /** 被告姓名 (例如 谢添全) */
+  /** 被告姓名 (例如 谢某) */
   defendant: string;
   /** 性别 */
   gender?: string;

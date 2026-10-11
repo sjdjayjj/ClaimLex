@@ -4,7 +4,86 @@ import http from 'node:http';
 import https from 'node:https';
 import tls from 'node:tls';
 import net from 'node:net';
+import crypto from 'node:crypto';
 import { URL } from 'node:url';
+
+/**
+ * 站点登录账号与会话签名密钥（可通过环境变量覆盖）
+ */
+const CLAIMLEX_USER = (process.env.CLAIMLEX_USER || 'claimlex').trim();
+const CLAIMLEX_PASS = process.env.CLAIMLEX_PASS || 'citicsz';
+const CLAIMLEX_SESSION_SECRET = process.env.CLAIMLEX_SESSION_SECRET || 'claimlex-session-secret-2026';
+const CLAIMLEX_SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 会话有效期 12 小时
+
+/**
+ * HMAC-SHA256 签名（Node 环境）
+ */
+function hmacSignNode(payload: string, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(payload).digest('hex');
+}
+
+/**
+ * 校验会话令牌（格式: encodeURIComponent(username).expiresAt.signature）
+ */
+function verifySessionTokenNode(token: string | undefined, secret: string): boolean {
+  if (!token) return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const expiresAt = Number(parts[1]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  let username: string;
+  try {
+    username = decodeURIComponent(parts[0]);
+  } catch {
+    return false;
+  }
+  const expected = hmacSignNode(`${username}.${expiresAt}`, secret);
+  return expected === parts[2];
+}
+
+/**
+ * 本地开发登录接口插件：与 functions/api/login.ts 保持一致的校验与令牌签发逻辑
+ */
+function loginPlugin(): Plugin {
+  return {
+    name: 'claimlex-login-plugin',
+    configureServer(server) {
+      server.middlewares.use('/api/login', (req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end(JSON.stringify({ error: { message: 'Method Not Allowed' } }));
+          return;
+        }
+
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        req.on('end', () => {
+          try {
+            const body = JSON.parse(Buffer.concat(chunks).toString('utf-8') || '{}');
+            const username = String(body?.username ?? '').trim();
+            const password = String(body?.password ?? '');
+
+            if (username !== CLAIMLEX_USER || password !== CLAIMLEX_PASS) {
+              res.statusCode = 401;
+              res.end(JSON.stringify({ error: { message: '用户名或密码错误' } }));
+              return;
+            }
+
+            const expiresAt = Date.now() + CLAIMLEX_SESSION_TTL_MS;
+            const signature = hmacSignNode(`${username}.${expiresAt}`, CLAIMLEX_SESSION_SECRET);
+            const token = `${encodeURIComponent(username)}.${expiresAt}.${signature}`;
+            res.end(JSON.stringify({ ok: true, username, token, expiresAt }));
+          } catch {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: { message: '请求体必须为 JSON' } }));
+          }
+        });
+      });
+    },
+  };
+}
 
 /**
  * 常见本地科学上网代理端口候选
@@ -116,6 +195,15 @@ function llmProxyPlugin(): Plugin {
           return;
         }
 
+        // 会话鉴权：未登录或令牌无效/过期一律拒绝转发
+        const authToken = req.headers['x-claimlex-auth'] as string | undefined;
+        if (!verifySessionTokenNode(authToken, CLAIMLEX_SESSION_SECRET)) {
+          res.statusCode = 401;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: { message: '会话无效或已过期，请重新登录' } }));
+          return;
+        }
+
         const targetUrlStr = req.headers['x-target-url'] as string;
         if (!targetUrlStr) {
           res.statusCode = 400;
@@ -157,7 +245,7 @@ function llmProxyPlugin(): Plugin {
           const targetPort = targetUrl.port ? Number(targetUrl.port) : (targetUrl.protocol === 'https:' ? 443 : 80);
           const isHttps = targetUrl.protocol === 'https:';
 
-          // 检测是否需要走代理（境外域名如 googleapis.com, openai.com 等，或用户本地开启了代理）
+          // 检测是否需要走代理（用户配置了境外中转地址或本地开启了代理时）
           const isForeignHost = /googleapis\.com|google\.com|openai\.com|anthropic\.com/i.test(targetUrl.hostname);
           const detectedProxy = await detectLocalProxy();
 
@@ -240,7 +328,7 @@ function llmProxyPlugin(): Plugin {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(), llmProxyPlugin()],
+  plugins: [react(), loginPlugin(), llmProxyPlugin()],
   server: {
     port: 5173,
     host: true,

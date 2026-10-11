@@ -1,8 +1,18 @@
 /**
  * Cloudflare Pages Functions 全球边缘通用转发代理
  * 解决浏览器前端直接调用大模型接口时的 CORS 跨域拦截
+ * 需携带登录后签发的 x-claimlex-auth 会话令牌方可转发
  */
-export async function onRequest(context: { request: Request }): Promise<Response> {
+import { verifySessionToken } from './login';
+
+const DEFAULT_SESSION_SECRET = 'claimlex-session-secret-2026';
+
+interface PagesFunctionContext {
+  request: Request;
+  env?: Record<string, string | undefined>;
+}
+
+export async function onRequest(context: PagesFunctionContext): Promise<Response> {
   const req = context.request;
 
   // 跨域预检请求直接放行
@@ -13,6 +23,20 @@ export async function onRequest(context: { request: Request }): Promise<Response
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': '*',
+      },
+    });
+  }
+
+  // 会话鉴权：未登录或令牌无效/过期一律拒绝转发
+  const sessionToken = req.headers.get('x-claimlex-auth');
+  const secret = context.env?.CLAIMLEX_SESSION_SECRET || DEFAULT_SESSION_SECRET;
+  const isAuthenticated = await verifySessionToken(sessionToken, secret);
+  if (!isAuthenticated) {
+    return new Response(JSON.stringify({ error: { message: '会话无效或已过期，请重新登录' } }), {
+      status: 401,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   }

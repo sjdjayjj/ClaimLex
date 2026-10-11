@@ -1,6 +1,7 @@
 import { CalculationParams, RepaymentRecord } from '../core/types';
 import { roundToFen } from '../core/calculator';
-import { LLMConfig, ParsedAnalysisResult, BatchCaseClient } from './llmTypes';
+import { LLMConfig, LLMPreset, ParsedAnalysisResult, BatchCaseClient } from './llmTypes';
+import { getAuthHeaders } from './authService';
 import { parseRepaymentReceiptFromText, normalizeDate } from '../parser/repaymentReceiptParser';
 import { JUDGMENT_PARSER_PROMPT } from '../parser/prompt';
 import dayjs from 'dayjs';
@@ -16,24 +17,8 @@ export const LLM_PRESETS: LLMPreset[] = [
     name: 'DeepSeek (深度求索)',
     apiUrl: 'https://api.deepseek.com/chat/completions',
     apiVersion: 'v1',
-    model: 'deepseek-chat',
+    model: 'deepseek-flash',
     description: '国内高性价比大模型，具备极强的法律文书逻辑推理与长文本解析能力',
-  },
-  {
-    id: 'gemini',
-    name: 'Google Gemini (官方兼容)',
-    apiUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    apiVersion: 'v1beta',
-    model: 'gemini-3.8-flash',
-    description: 'Google 官方提供的 OpenAI 兼容接口（支持 3.8 flash 等最新模型）',
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI (GPT-4o)',
-    apiUrl: 'https://api.openai.com/v1/chat/completions',
-    apiVersion: 'v1',
-    model: 'gpt-4o',
-    description: '国际通用顶尖模型，长文本与复杂结构化 JSON 抽取极度精准',
   },
   {
     id: 'qwen',
@@ -77,7 +62,7 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   apiUrl: 'https://api.deepseek.com/chat/completions',
   apiVersion: 'v1',
   method: 'POST',
-  model: 'deepseek-chat',
+  model: 'deepseek-flash',
   apiKey: '',
   timeoutMs: 90000,
   temperature: 0.1, // 法律要素抽取建议极低温度，保证确定性
@@ -86,31 +71,13 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
 };
 
 /**
- * 智能修正 URL：针对常见的输入不完整（如缺少 /chat/completions 或 Google Gemini 缺少 /openai 路径）进行智能修复
+ * 智能修正 URL：针对常见的输入不完整（如缺少 /chat/completions）进行智能修复
  */
 export function fixIncompleteApiUrl(url: string): { fixedUrl: string; hasSuggestion: boolean; reason?: string } {
   if (!url) return { fixedUrl: '', hasSuggestion: false };
   let trimmed = url.trim().replace(/\/+$/, '');
 
-  // 针对 Google Gemini
-  if (trimmed.includes('generativelanguage.googleapis.com')) {
-    if (trimmed.endsWith('/v1beta') || trimmed.endsWith('/v1')) {
-      return {
-        fixedUrl: `${trimmed}/openai/chat/completions`,
-        hasSuggestion: true,
-        reason: 'Google Gemini 的 OpenAI 兼容调用需要以 /openai/chat/completions 结尾',
-      };
-    }
-    if (trimmed.endsWith('/openai')) {
-      return {
-        fixedUrl: `${trimmed}/chat/completions`,
-        hasSuggestion: true,
-        reason: '补齐 /chat/completions 请求端点路径',
-      };
-    }
-  }
-
-  // 针对普通以 /v1 结尾的 OpenAI 兼容端点，缺少 /chat/completions
+  // 针对普通以 /v1 结尾的兼容端点，缺少 /chat/completions
   if (/\/v1(?:beta)?$/i.test(trimmed)) {
     return {
       fixedUrl: `${trimmed}/chat/completions`,
@@ -130,6 +97,10 @@ export function loadLLMConfig(): LLMConfig {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_LLM_CONFIG };
     const parsed = JSON.parse(raw);
+    // 历史配置迁移：统一使用国内模型标识 deepseek-flash
+    if (parsed && typeof parsed.model === 'string' && parsed.model.trim() === 'deepseek-chat') {
+      parsed.model = 'deepseek-flash';
+    }
     return { ...DEFAULT_LLM_CONFIG, ...parsed };
   } catch {
     return { ...DEFAULT_LLM_CONFIG };
@@ -193,6 +164,7 @@ async function dispatchApiRequest(
       const proxyHeaders = {
         ...headers,
         'x-target-url': targetUrl,
+        ...getAuthHeaders(),
       };
       const proxyRes = await fetch('/api/llm-proxy', {
         method,
@@ -233,6 +205,7 @@ async function dispatchApiRequest(
       const proxyHeaders = {
         ...headers,
         'x-target-url': targetUrl,
+        ...getAuthHeaders(),
       };
       const fallbackRes = await fetch('/api/llm-proxy', {
         method,
@@ -303,7 +276,7 @@ export async function testLLMConnection(config: LLMConfig): Promise<{ success: b
         throw new Error(`认证失败 (HTTP ${response.status})：请检查 API Key 是否填写正确、有效或具有该模型权限。\n详情: ${errorDetail}`);
       }
       if (response.status === 404) {
-        throw new Error(`地址或模型未找到 (HTTP 404)：\n1. 请检查 API 调用完整地址是否包含 /openai/chat/completions；\n2. 确认模型名称标识是否与服务提供商后台完全一致。\n详情: ${errorDetail}`);
+        throw new Error(`地址或模型未找到 (HTTP 404)：\n1. 请检查 API 调用完整地址是否包含 /chat/completions；\n2. 确认模型名称标识是否与服务提供商后台完全一致。\n详情: ${errorDetail}`);
       }
       if (response.status === 429) {
         throw new Error(`请求受限 (HTTP 429)：账户额度已耗尽或触发限流频率控制。\n详情: ${errorDetail}`);
@@ -325,12 +298,7 @@ export async function testLLMConnection(config: LLMConfig): Promise<{ success: b
       throw new Error(`连接超时（超过 30 秒）：请检查网络连接、API 代理或服务器状态。`);
     }
     if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-      const isGoogle = targetUrl.includes('googleapis.com');
-      let customTips = '';
-      if (isGoogle) {
-        customTips = `\n【针对 Google Gemini 专项排查】：\n1. 请确认本地代理工具已开启系统/全局代理；\n2. 完整 URL 需包含 /openai/chat/completions。`;
-      }
-      throw new Error(`网络请求失败 (Failed to fetch)：\n请确认 API 地址可连通或本地代理正常。${customTips}`);
+      throw new Error(`网络请求失败 (Failed to fetch)：\n请确认 API 地址可连通或本地代理正常。`);
     }
     throw error;
   }
@@ -593,12 +561,7 @@ export async function analyzeJudgmentWithLLM(
       throw new Error(`大模型分析处理超时（超过 ${Math.round((config.timeoutMs || 90000) / 1000)} 秒），请检查网络稳定性或适当调整超时设置。`);
     }
     if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-      const isGoogle = targetUrl.includes('googleapis.com');
-      let customTips = '';
-      if (isGoogle) {
-        customTips = `\n【针对 Google Gemini 专项排查】：\n1. 请确认本地代理工具已开启系统/全局代理；\n2. 完整 URL 需包含 /openai/chat/completions。`;
-      }
-      throw new Error(`网络请求失败 (Failed to fetch)：\n请确认 API 地址可连通或本地代理正常。${customTips}`);
+      throw new Error(`网络请求失败 (Failed to fetch)：\n请确认 API 地址可连通或本地代理正常。`);
     }
     throw error;
   }
