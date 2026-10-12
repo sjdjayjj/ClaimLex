@@ -1,6 +1,8 @@
 import { RateHistoryItem } from './types';
 
 export const RATE_HISTORY: RateHistoryItem[] = [
+  { date: "2025-05-20", type: "LPR", r1: 3.00, r5: 3.50, remark: "双品种同步下调10BP" },
+  { date: "2024-10-21", type: "LPR", r1: 3.10, r5: 3.60, remark: "双品种同步下调25BP，年内降幅最大一次" },
   { date: "2024-07-22", type: "LPR", r1: 3.35, r5: 3.85, remark: "LPR降息" },
   { date: "2024-02-20", type: "LPR", r1: 3.45, r5: 3.95, remark: "5年期LPR大幅下调25BP" },
   { date: "2023-08-21", type: "LPR", r1: 3.45, r5: 4.20, remark: "1年期LPR下调10BP" },
@@ -9,7 +11,10 @@ export const RATE_HISTORY: RateHistoryItem[] = [
   { date: "2022-05-20", type: "LPR", r1: 3.70, r5: 4.45, remark: "5年期LPR下调15BP" },
   { date: "2022-01-20", type: "LPR", r1: 3.70, r5: 4.60, remark: "LPR下调" },
   { date: "2021-12-20", type: "LPR", r1: 3.80, r5: 4.65, remark: "1年期LPR下调5BP" },
-  { date: "2020-04-20", type: "LPR", r1: 3.85, r5: 4.65, remark: "新冠疫情期间LPR" },
+  { date: "2020-04-20", type: "LPR", r1: 3.85, r5: 4.65, remark: "新冠疫情期间双品种下调10BP" },
+  { date: "2020-02-20", type: "LPR", r1: 4.05, r5: 4.75, remark: "新冠疫情期间双品种下调10BP" },
+  { date: "2019-11-20", type: "LPR", r1: 4.15, r5: 4.80, remark: "双品种各下调5BP" },
+  { date: "2019-09-20", type: "LPR", r1: 4.20, r5: 4.85, remark: "1年期LPR下调5BP" },
   { date: "2019-08-20", type: "LPR", r1: 4.25, r5: 4.85, remark: "央行LPR改革首次报价" },
   { date: "2015-10-24", type: "BENCHMARK", r1: 4.35, r5: 4.90, remark: "央行存贷款基准利率最后一次调整" },
   { date: "2015-08-26", type: "BENCHMARK", r1: 4.60, r5: 5.15, remark: "央行双降" },
