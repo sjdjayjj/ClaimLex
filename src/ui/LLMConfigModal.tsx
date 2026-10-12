@@ -410,6 +410,32 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({
                   />
                 </div>
 
+                {/* 深度思考开关 (DeepSeek thinking) */}
+                <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-slate-200 font-semibold flex items-center gap-1.5 text-sm">
+                      深度思考模式 (Thinking)
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${config.enableThinking === false ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-indigo-950/60 text-indigo-300 border-indigo-700/50'}`}>
+                        {config.enableThinking === false ? '已关闭' : '已开启'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                      开启后模型先推理再输出，批量附表提取更准但耗时明显更长；关闭后直接输出 JSON，速度大幅提升。长文书超时可尝试关闭。
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={config.enableThinking !== false}
+                    onClick={() => setConfig({ ...config, enableThinking: config.enableThinking === false })}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${config.enableThinking === false ? 'bg-slate-700' : 'bg-blue-600'}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${config.enableThinking === false ? 'translate-x-1' : 'translate-x-6'}`}
+                    />
+                  </button>
+                </div>
+
                 {/* 自定义 Headers 列表 */}
                 <div>
                   <div className="flex items-center justify-between mb-2">

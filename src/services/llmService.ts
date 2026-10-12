@@ -66,6 +66,7 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
   apiKey: '',
   timeoutMs: 90000,
   temperature: 0.1, // 法律要素抽取建议极低温度，保证确定性
+  enableThinking: true, // 默认开启深度思考；复杂批量附表建议保持，追求速度可关闭
   customHeaders: [],
   useLocalProxy: true, // 默认开启本地开发代理，彻底消除浏览器跨域 CORS 拦截
 };
@@ -249,6 +250,7 @@ export async function testLLMConnection(config: LLMConfig): Promise<{ success: b
       ],
       temperature: 0.1,
       max_tokens: 30,
+      thinking: { type: 'disabled' }, // 连通性测试关闭思考，确保快速返回可读回复
     };
 
     const response = await dispatchApiRequest(
@@ -506,11 +508,13 @@ export async function analyzeJudgmentWithLLM(
         { role: 'user', content: userContent },
       ],
       temperature: config.temperature ?? 0.1,
+      // 深度思考开关 (DeepSeek thinking 参数)：关闭后模型跳过推理直接输出，大幅缩短响应时间
+      thinking: { type: config.enableThinking === false ? 'disabled' : 'enabled' },
       stream: true, // 流式输出：规避边缘网络对长连接无响应字节的掐断，并支持实时进度
     };
 
     onProgress?.(`正在请求大模型 [${config.model}] 进行司法要素深度推理 (请稍候)...`);
-    streamHooks?.onEvent?.(`发起流式请求 → ${targetUrl} | 模型: ${config.model.trim()} | 数据流空闲超时: ${Math.round(idleMs / 1000)}s`);
+    streamHooks?.onEvent?.(`发起流式请求 → ${targetUrl} | 模型: ${config.model.trim()} | 深度思考: ${config.enableThinking === false ? '关闭' : '开启'} | 数据流空闲超时: ${Math.round(idleMs / 1000)}s`);
 
     const response = await dispatchApiRequest(
       targetUrl,

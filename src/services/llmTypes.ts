@@ -29,6 +29,8 @@ export interface LLMConfig {
   timeoutMs: number;
   /** 采样温度 */
   temperature: number;
+  /** 深度思考模式 (DeepSeek thinking)：true=开启思考（更准但更慢），false=关闭（直接输出，速度更快），默认开启 */
+  enableThinking: boolean;
   /** 自定义请求头列表 */
   customHeaders: HeaderItem[];
   /** 是否通过本地开发服务器代理转发 (可彻底消除浏览器跨域 CORS 拦截) */
