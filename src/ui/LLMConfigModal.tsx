@@ -354,17 +354,20 @@ export const LLMConfigModal: React.FC<LLMConfigModalProps> = ({
                     />
                   </div>
 
-                  {/* 请求超时时间 */}
+                  {/* 数据流空闲超时 */}
                   <div>
-                    <label className="block text-slate-400 mb-1">请求超时 (秒)</label>
+                    <label className="block text-slate-400 mb-1">数据流空闲超时 (秒)</label>
                     <input
                       type="number"
                       min={10}
-                      max={300}
+                      max={600}
                       value={Math.round((config.timeoutMs || 90000) / 1000)}
                       onChange={e => setConfig({ ...config, timeoutMs: Math.max(10, Number(e.target.value)) * 1000 })}
                       className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
                     />
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      仅在连续 N 秒未收到任何模型数据时才中断；每收到一次数据自动续期。长文书推理可保持 90 秒默认值。
+                    </p>
                   </div>
                 </div>
 

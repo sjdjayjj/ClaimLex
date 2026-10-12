@@ -440,13 +440,29 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
   };
 }
 
+/** 流式过程钩子：用于悬浮窗实时展示模型 API 原始输出 */
+export interface LLMStreamHooks {
+  /** 模型思考过程 (reasoning_content) 增量 */
+  onReasoningDelta?: (text: string) => void;
+  /** 模型最终输出 (content) 增量 */
+  onContentDelta?: (text: string) => void;
+  /** 生命周期事件（发起请求、流式开始、完成、中断等，纯文本，时间戳由 UI 侧补充） */
+  onEvent?: (text: string) => void;
+  /** token 用量统计（流式最后一个 chunk 或非流式响应携带时触发） */
+  onUsage?: (usage: any) => void;
+}
+
 /**
  * 调用真实大模型进行裁判文书智能分析与要素提取
+ * 采用流式 (stream) 请求：长文书推理耗时可达数分钟，流式可保证连接持续有字节流动，
+ * 既绕开 Cloudflare 边缘 ~100 秒无响应即断开的限制，也让前端实时感知运行状态。
+ * timeoutMs 语义为「数据流空闲超时」：每收到一次数据自动续期，仅在持续无数据时才中止。
  */
 export async function analyzeJudgmentWithLLM(
   documentText: string,
   config: LLMConfig,
-  onProgress?: (statusText: string) => void
+  onProgress?: (statusText: string) => void,
+  streamHooks?: LLMStreamHooks
 ): Promise<ParsedAnalysisResult> {
   if (!documentText || !documentText.trim()) {
     throw new Error('裁判文书内容为空，请输入或上传文书文本');
@@ -463,8 +479,20 @@ export async function analyzeJudgmentWithLLM(
 
   onProgress?.('正在向大模型组装司法审判上下文与 Prompt...');
 
+  const idleMs = config.timeoutMs || 90000;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs || 90000);
+  // 空闲超时计时器：每收到一次流数据自动续期，只有持续收不到数据才会触发 abort
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const armIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => controller.abort(), idleMs);
+  };
+  const disarmIdleTimer = () => {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  };
 
   try {
     const headers = buildRequestHeaders(config);
@@ -478,9 +506,11 @@ export async function analyzeJudgmentWithLLM(
         { role: 'user', content: userContent },
       ],
       temperature: config.temperature ?? 0.1,
+      stream: true, // 流式输出：规避边缘网络对长连接无响应字节的掐断，并支持实时进度
     };
 
     onProgress?.(`正在请求大模型 [${config.model}] 进行司法要素深度推理 (请稍候)...`);
+    streamHooks?.onEvent?.(`发起流式请求 → ${targetUrl} | 模型: ${config.model.trim()} | 数据流空闲超时: ${Math.round(idleMs / 1000)}s`);
 
     const response = await dispatchApiRequest(
       targetUrl,
@@ -491,9 +521,8 @@ export async function analyzeJudgmentWithLLM(
       config.useLocalProxy !== false
     );
 
-    clearTimeout(timeout);
-
     if (!response.ok) {
+      disarmIdleTimer();
       let errorDetail = '';
       try {
         const errJson = await response.json();
@@ -514,13 +543,85 @@ export async function analyzeJudgmentWithLLM(
       throw new Error(`大模型调用异常 [HTTP ${response.status}]: ${errorDetail || response.statusText}`);
     }
 
-    onProgress?.('已接收模型返回数据，正在进行格式化解析与结构化校准...');
+    onProgress?.('已建立连接，正在接收模型返回数据流...');
 
-    const responseData = await response.json();
-    const rawContent = responseData.choices?.[0]?.message?.content || '';
+    const contentType = response.headers.get('content-type') || '';
+    let rawContent = '';
+    let reasoningText = '';
+    let usageInfo: any = null;
+    let receivedChars = 0;
+
+    if (contentType.includes('text/event-stream') && response.body) {
+      // ===== 流式模式：逐段读取 SSE 数据 =====
+      streamHooks?.onEvent?.('连接成功，开始接收 SSE 数据流 (stream=true)...');
+      armIdleTimer();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let streamDone = false;
+
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        armIdleTimer(); // 每收到一个网络分块即续期空闲计时
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let nlIdx: number;
+        while ((nlIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, nlIdx).trim();
+          buffer = buffer.slice(nlIdx + 1);
+          if (!line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') {
+            streamDone = true;
+            break;
+          }
+          try {
+            const chunk = JSON.parse(payload);
+            if (chunk.usage) {
+              usageInfo = chunk.usage;
+              streamHooks?.onUsage?.(chunk.usage);
+            }
+            const delta = chunk.choices?.[0]?.delta;
+            if (delta?.reasoning_content) {
+              reasoningText += delta.reasoning_content;
+              streamHooks?.onReasoningDelta?.(delta.reasoning_content);
+            }
+            if (delta?.content) {
+              rawContent += delta.content;
+              receivedChars += delta.content.length;
+              streamHooks?.onContentDelta?.(delta.content);
+              if (receivedChars % 500 < delta.content.length) {
+                onProgress?.(`正在接收模型输出流... 已接收 ${receivedChars} 字符`);
+              }
+            }
+          } catch {
+            // 忽略无法解析的心跳/注释行
+          }
+        }
+      }
+      disarmIdleTimer();
+      streamHooks?.onEvent?.(`数据流接收完毕，累计思考 ${reasoningText.length} 字符，正文输出 ${rawContent.length} 字符`);
+    } else {
+      // ===== 非流式兼容降级：部分厂商端点不支持 stream 时自动回退 =====
+      streamHooks?.onEvent?.('端点未返回 event-stream，自动按非流式 JSON 模式解析...');
+      armIdleTimer();
+      const responseData = await response.json();
+      disarmIdleTimer();
+      rawContent = responseData.choices?.[0]?.message?.content || '';
+      reasoningText = responseData.choices?.[0]?.message?.reasoning_content || '';
+      usageInfo = responseData.usage || null;
+      if (usageInfo) streamHooks?.onUsage?.(usageInfo);
+    }
+
+    onProgress?.('已接收模型返回数据，正在进行格式化解析与结构化校准...');
 
     if (!rawContent) {
       throw new Error('大模型响应结果中未包含有效文本内容 (choices[0].message.content 为空)');
+    }
+
+    if (usageInfo) {
+      streamHooks?.onEvent?.(`token 用量: ${JSON.stringify(usageInfo)}`);
     }
 
     // 结构化提取 JSON
@@ -541,6 +642,11 @@ export async function analyzeJudgmentWithLLM(
       }
     }
 
+    // 原始输出附带思考过程，便于法务审计与超时排查
+    const fullRawOutput = reasoningText
+      ? `════ 【模型思考过程 reasoning_content】 ════\n${reasoningText}\n\n════ 【模型最终输出 content】 ════\n${rawContent}`
+      : rawContent;
+
     return {
       params,
       caseNo: extra.caseNo,
@@ -548,7 +654,7 @@ export async function analyzeJudgmentWithLLM(
       defendant: extra.defendant,
       reasoning: extra.reasoning || '',
       keyPoints: extra.keyPoints,
-      rawOutput: rawContent,
+      rawOutput: fullRawOutput,
       isBatchCase: extra.isBatchCase,
       batchClients: extra.batchClients,
       selectedClientId: extra.selectedClientId,
@@ -556,9 +662,9 @@ export async function analyzeJudgmentWithLLM(
       repayments: extra.repayments,
     };
   } catch (error: any) {
-    clearTimeout(timeout);
+    disarmIdleTimer();
     if (error.name === 'AbortError') {
-      throw new Error(`大模型分析处理超时（超过 ${Math.round((config.timeoutMs || 90000) / 1000)} 秒），请检查网络稳定性或适当调整超时设置。`);
+      throw new Error(`大模型数据流空闲超时（连续 ${Math.round(idleMs / 1000)} 秒未收到任何模型数据），请检查网络稳定性或适当调整超时设置。`);
     }
     if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
       throw new Error(`网络请求失败 (Failed to fetch)：\n请确认 API 地址可连通或本地代理正常。`);

@@ -25,7 +25,7 @@ export interface LLMConfig {
   model: string;
   /** API 认证密钥 (Bearer Token 或 API Key) */
   apiKey: string;
-  /** 超时时间 (毫秒)，默认 60000 */
+  /** 数据流空闲超时 (毫秒)：每收到一次模型流数据自动续期，连续无数据达到该时长才中断，默认 90000 */
   timeoutMs: number;
   /** 采样温度 */
   temperature: number;

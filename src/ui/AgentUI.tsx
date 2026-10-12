@@ -285,6 +285,49 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
   const [showRawOutput, setShowRawOutput] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // 模型 API 原始输出悬浮窗（实时流日志，用于观察运行状态与排查超时）
+  const [showApiPanel, setShowApiPanel] = useState(false);
+  const [apiLog, setApiLog] = useState('');
+  const [apiRunning, setApiRunning] = useState(false);
+  const [apiStartedAt, setApiStartedAt] = useState(0);
+  const [apiNow, setApiNow] = useState(0);
+  const [apiStats, setApiStats] = useState({ reasoning: 0, content: 0 });
+  const [apiUsage, setApiUsage] = useState('');
+  const apiLogRef = useRef('');
+  const apiStatsRef = useRef({ reasoning: 0, content: 0 });
+  const apiFlushTimerRef = useRef<number | null>(null);
+  const apiSectionFlagsRef = useRef({ reasoning: false, content: false });
+  const apiPanelScrollRef = useRef<HTMLPreElement | null>(null);
+
+  // 追加原始日志（120ms 节流批量刷新，避免高频 setState 卡顿）
+  const pushApiLog = (text: string) => {
+    apiLogRef.current += text;
+    if (apiFlushTimerRef.current === null) {
+      apiFlushTimerRef.current = window.setTimeout(() => {
+        apiFlushTimerRef.current = null;
+        setApiLog(apiLogRef.current);
+        setApiStats({ ...apiStatsRef.current });
+      }, 120);
+    }
+  };
+  const appendApiEvent = (text: string) => {
+    pushApiLog(`\n[${dayjs().format('HH:mm:ss')}] ${text}\n`);
+  };
+
+  // 日志更新后自动滚动到底部
+  useEffect(() => {
+    if (apiPanelScrollRef.current) {
+      apiPanelScrollRef.current.scrollTop = apiPanelScrollRef.current.scrollHeight;
+    }
+  }, [apiLog]);
+
+  // 运行期间每 500ms 刷新一次计时
+  useEffect(() => {
+    if (!apiRunning) return;
+    const timer = window.setInterval(() => setApiNow(Date.now()), 500);
+    return () => window.clearInterval(timer);
+  }, [apiRunning]);
+
   // 批量案件多客户选择与检索状态
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [clientSearchKeyword, setClientSearchKeyword] = useState<string>('');
@@ -696,14 +739,47 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
     setErrorMessage(null);
     setParseProgressText('初始化大模型客户端...');
 
+    // 重置并开启模型原始输出悬浮窗，实时观察运行状态与排查超时
+    apiLogRef.current = '';
+    apiStatsRef.current = { reasoning: 0, content: 0 };
+    apiSectionFlagsRef.current = { reasoning: false, content: false };
+    setApiLog('');
+    setApiStats({ reasoning: 0, content: 0 });
+    setApiUsage('');
+    setApiStartedAt(Date.now());
+    setApiNow(Date.now());
+    setApiRunning(true);
+    setShowApiPanel(true);
+
     try {
       // 0. 发送大模型前再次强制脱敏（覆盖手工粘贴等入口），确保行外传输零敏感明文
       const safeInput = desensitizeText(inputText).text;
+      appendApiEvent(`文书已脱敏，送审长度 ${safeInput.length} 字符（约 ${Math.max(1, Math.round(safeInput.length / 800))} 页体量）`);
 
-      // 1. 调用真实大模型完成文书解析与要素提取
+      // 1. 调用真实大模型完成文书解析与要素提取（流式，实时上报原始输出）
       const parsedData = await analyzeJudgmentWithLLM(safeInput, llmConfig, (statusText) => {
         setParseProgressText(statusText);
+      }, {
+        onEvent: (text) => appendApiEvent(text),
+        onReasoningDelta: (text) => {
+          if (!apiSectionFlagsRef.current.reasoning) {
+            apiSectionFlagsRef.current.reasoning = true;
+            pushApiLog('\n════════ 【模型思考过程 reasoning_content】 ════════\n');
+          }
+          apiStatsRef.current.reasoning += text.length;
+          pushApiLog(text);
+        },
+        onContentDelta: (text) => {
+          if (!apiSectionFlagsRef.current.content) {
+            apiSectionFlagsRef.current.content = true;
+            pushApiLog('\n\n════════ 【模型最终输出 content】 ════════\n');
+          }
+          apiStatsRef.current.content += text.length;
+          pushApiLog(text);
+        },
+        onUsage: (usage) => setApiUsage(JSON.stringify(usage)),
       });
+      appendApiEvent('✅ 模型调用与结构化解析全部成功');
 
       setAnalysisResult(parsedData);
       setParams(parsedData.params);
@@ -750,7 +826,10 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
     } catch (err: any) {
       console.error('大模型解析调用失败:', err);
       setErrorMessage(err.message || '大模型调用异常，请检查网络或配置');
+      appendApiEvent(`❌ 调用失败: ${err.message || '未知异常'}（总耗时 ${Math.round((Date.now() - apiStartedAt) / 1000)} 秒，可在悬浮日志中定位中断位置）`);
+      setShowApiPanel(true);
     } finally {
+      setApiRunning(false);
       setIsParsing(false);
       setParseProgressText('');
     }
@@ -1043,6 +1122,26 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                 </div>
 
                 <div className="flex items-center gap-3">
+                  {/* 模型 API 原始输出悬浮窗开关（实时观察运行状态 / 排查超时） */}
+                  <button
+                    onClick={() => setShowApiPanel(!showApiPanel)}
+                    title="悬浮窗实时展示大模型 API 原始输出（思考过程与 JSON 正文），用于确认运行状态与排查超时"
+                    className={`relative inline-flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-semibold border transition-all ${
+                      showApiPanel
+                        ? 'bg-cyan-950 text-cyan-200 border-cyan-600/60 shadow-lg shadow-cyan-900/40'
+                        : 'bg-slate-900 text-slate-300 border-slate-700 hover:bg-slate-800 hover:text-cyan-200'
+                    }`}
+                  >
+                    <Code2 className="w-4 h-4 text-cyan-400" />
+                    <span>模型原始输出</span>
+                    {apiRunning && (
+                      <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border-2 border-slate-900"></span>
+                      </span>
+                    )}
+                  </button>
+
                   <button
                     onClick={handleExecuteAgent}
                     disabled={isParsing || !inputText.trim()}
@@ -2228,6 +2327,55 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
         config={llmConfig}
         onSave={(newCfg) => setLlmConfig(newCfg)}
       />
+
+      {/* 模型 API 原始输出悬浮窗（实时流日志：请求事件 / 思考过程 / JSON 正文 / 用量 / 错误） */}
+      {showApiPanel && (
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col rounded-2xl bg-slate-950/95 border border-slate-700 shadow-2xl backdrop-blur-md overflow-hidden"
+             style={{ width: 'min(720px, calc(100vw - 3rem))', height: 'min(560px, 72vh)' }}>
+          {/* 标题栏 */}
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${apiRunning ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+              <span className="text-xs font-bold text-slate-200 truncate">模型 API 原始输出（实时流）</span>
+              {apiRunning && apiStartedAt > 0 && (
+                <span className="text-[10px] font-mono text-emerald-300 shrink-0">
+                  已运行 {Math.max(0, Math.round((apiNow - apiStartedAt) / 1000))}s
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => { apiLogRef.current = ''; apiSectionFlagsRef.current = { reasoning: false, content: false }; setApiLog(''); }}
+                className="px-2 py-1 text-[10px] rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition"
+              >
+                清空
+              </button>
+              <button
+                onClick={() => setShowApiPanel(false)}
+                className="px-2 py-1 text-[10px] rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* 统计条 */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-1.5 bg-slate-900/60 border-b border-slate-800/70 text-[10px] font-mono text-slate-400 shrink-0">
+            <span>思考 {apiStats.reasoning.toLocaleString()} 字符</span>
+            <span>正文 {apiStats.content.toLocaleString()} 字符</span>
+            {apiUsage && <span className="text-cyan-400 truncate max-w-[45%]" title={apiUsage}>usage: {apiUsage}</span>}
+            {apiRunning && <span className="text-emerald-400 animate-pulse">● 数据流接收中…</span>}
+          </div>
+
+          {/* 原始日志体 */}
+          <pre
+            ref={apiPanelScrollRef}
+            className="flex-1 m-0 p-3 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all text-[11px] leading-relaxed font-mono text-slate-300"
+          >
+            {apiLog || '等待发起请求…点击「⚡ 启动真实大模型智能解析与债权清算」后，此处将实时显示模型思考过程与 JSON 原始输出。'}
+          </pre>
+        </div>
+      )}
     </div>
   );
 };
