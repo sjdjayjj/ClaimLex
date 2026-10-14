@@ -45,8 +45,20 @@ const ID18_RE = /(?<![\dXx])[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[
 const ID15_RE = /(?<!\d)[1-9]\d{5}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}(?!\d)/g;
 /** 手机号 */
 const PHONE_RE = /(?<!\d)1[3-9]\d{9}(?!\d)/g;
-/** 12-25 位纯数字串（银行卡号/贷款账号/借据号等） */
+/** 12-25 位纯数字串（银行卡号/贷款账号等） */
 const LONG_NUM_RE = /(?<!\d)\d{12,25}(?!\d)/g;
+/**
+ * 借据号/协议号标签：贷款协议号是附表协议号与回单贷款借据号的匹配键（如文书 811032383950002 ↔ 回单 811032383950/002），
+ * 项目整体不脱敏——脱敏成 8110*****950 后回单解析只能截到 8110、附表协议号也会提取不全，导致分账匹配失败
+ */
+const RECEIPT_NO_LABEL = '(?:贷款借据号|借据号|借据编号|贷款协议号|协议号|协议编号|合同编号)';
+/** 标签上下文的借据号/协议号：如 贷款借据号：811032383950/002、贷款协议号为811032383950002 */
+const LABELED_RECEIPT_NO_RE = new RegExp(`(${RECEIPT_NO_LABEL}\\s*[:：是为]?\\s*)([0-9A-Za-z][0-9A-Za-z\\/\\-_]{7,29})`, 'g');
+/** 附表表格行内的协议号/借据号单元格（身份证号已在前面步骤脱敏，行内剩余12-20位数字即协议号） */
+const TABLE_RECEIPT_NO_RE = /(\|\s*)(\d{12,20}(?:\/\d{2,4})?)(?=\s*\|)/g;
+/** 占位符包裹符（私有区字符，不会被后续脱敏规则命中） */
+const PROTECT_WRAP = (i: number) => `\uE000${i}\uE001`;
+const PROTECT_UNWRAP_RE = /\uE000(\d+)\uE001/g;
 /**
  * 上下文引导的自然人姓名，支持顿号列举：
  * 「被告：谢添全、高俊胜、张立昕」整体命中并逐一脱敏
@@ -122,12 +134,28 @@ export function desensitizeText(text: string): { text: string; count: number } {
     return `${head}${maskChineseName(name)}${tail}`;
   });
 
-  // 6. 银行卡号 / 贷款账号等长数字串（保留前4后3；置于身份证之后避免重复命中）
+  // 5.5 借据号/协议号保护（项目整体不脱敏）：先用占位符暂存，待长数字脱敏后原样还原
+  const protectedSpans: string[] = [];
+  const protectSpan = (num: string): string => {
+    protectedSpans.push(num);
+    return PROTECT_WRAP(protectedSpans.length - 1);
+  };
+  // a) 标签上下文：贷款借据号：811032383950/002、协议号: 811032383950002 等
+  out = out.replace(LABELED_RECEIPT_NO_RE, (_m, label: string, num: string) => `${label}${protectSpan(num)}`);
+  // b) 附表表格行单元格（| 分隔）：行内剩余12-20位数字即贷款协议号/借据号
+  out = out.replace(TABLE_RECEIPT_NO_RE, (_m, pre: string, num: string) => `${pre}${protectSpan(num)}`);
+
+  // 6. 银行卡号 / 贷款账号等长数字串（保留前4后3；置于身份证之后避免重复命中；借据号/协议号已保护跳过）
   out = out.replace(LONG_NUM_RE, (m) => {
     // 排除已被步骤 1/2 处理后残留的合规年份串（如 201812210000）误伤概率极低，统一按账号脱敏
     count++;
     return maskDigitsKeep(m, 4, 3);
   });
+
+  // 还原借据号/协议号
+  if (protectedSpans.length > 0) {
+    out = out.replace(PROTECT_UNWRAP_RE, (_m, i: string) => protectedSpans[Number(i)]);
+  }
 
   return { text: out, count };
 }
