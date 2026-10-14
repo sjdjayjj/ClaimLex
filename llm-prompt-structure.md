@@ -7,7 +7,7 @@
 | 角色 | 内容 | 来源 |
 |---|---|---|
 | `system` | 司法要素提取系统提示词（约 4000 字，全文见下文第二节） | [prompt.ts](file:///d:/ClaimLex/src/parser/prompt.ts) 的 `JUDGMENT_PARSER_PROMPT` |
-| `user` | 一句包装语 + 脱敏后的文书全文 + 一句收尾指令（见第三节） | [llmService.ts](file:///d:/ClaimLex/src/services/llmService.ts#L577) |
+| `user` | 一句包装语 + 脱敏后的文书全文 + 客户筛选指令（筛选框非空时注入）+ 一句收尾指令（见第三节） | [llmService.ts](file:///d:/ClaimLex/src/services/llmService.ts) |
 
 除 messages 外，请求体还包含以下参数：
 
@@ -26,11 +26,12 @@
 ## 一、请求体组装代码（原文）
 
 ```ts
-const userContent = `以下是需要深度审阅和清算的借贷纠纷裁判文书/合同文本内容：
+// 客户筛选指令：解析文本框下方「客户筛选」输入框非空时注入，为空则省略（全量解析）
+const clientFilterInstruction = streamHooks?.clientFilter
+  ? `\n\n【用户指定客户筛选（最高优先级指令，必须严格执行）】：\n本次解析用户只关注客户「${streamHooks.clientFilter}」。请遵守：\n1. 仅提取该客户（按姓名精确匹配，姓名完全一致即可）在附表/正文中的全部数据；其余所有客户的行与数据一律忽略，严禁输出；\n2. "batchClients" 数组只包含该客户 1 条记录；顶层 "principal"、"baseInterest"、"basePenalty"、"defendant"、"caseNo"、"fixedRate" 等字段一律填该客户（而非附表第 1 位客户）的数值；\n3. 该客户名下若有多个协议号行，仍须在其 "loans" 数组中逐行完整提取，不得省略；\n4. "repayments" 若文书中含还款记录，仅保留与该客户相关（或无法区分归属时的全部）记录；\n5. 若文书中找不到该客户，"batchClients" 输出空数组 [] 并在 "reasoning" 中说明未检索到该客户。`
+  : '';
 
-${documentText.trim()}
-
-请严格按照要求提取 JSON 数据并返回。`;
+const userContent = `以下是需要深度审阅和清算的借贷纠纷裁判文书/合同文本内容：\n\n${documentText.trim()}${clientFilterInstruction}\n\n请严格按照要求提取 JSON 数据并返回。`;
 
 const requestBody = {
   model: config.model.trim(),
@@ -164,15 +165,25 @@ const requestBody = {
 
 ## 三、user 消息结构
 
-user 消息 = **开头包装语 + 文书正文 + 收尾指令**，其中文书正文并非 PDF 原样，而是经过三层预处理：
+user 消息 = **开头包装语 + 文书正文 + 客户筛选指令（可选） + 收尾指令**，其中文书正文并非 PDF 原样，而是经过三层预处理：
 
 ```text
 以下是需要深度审阅和清算的借贷纠纷裁判文书/合同文本内容：
 
 {文书正文}
 
+【用户指定客户筛选（最高优先级指令，必须严格执行）】：    ← 仅当筛选框非空时注入
+本次解析用户只关注客户「{姓名}」。请遵守：
+1. 仅提取该客户（按姓名精确匹配，姓名完全一致即可）在附表/正文中的全部数据；其余所有客户的行与数据一律忽略，严禁输出；
+2. "batchClients" 数组只包含该客户 1 条记录；顶层 "principal"、"baseInterest"、"basePenalty"、"defendant"、"caseNo"、"fixedRate" 等字段一律填该客户（而非附表第 1 位客户）的数值；
+3. 该客户名下若有多个协议号行，仍须在其 "loans" 数组中逐行完整提取，不得省略；
+4. "repayments" 若文书中含还款记录，仅保留与该客户相关（或无法区分归属时的全部）记录；
+5. 若文书中找不到该客户，"batchClients" 输出空数组 [] 并在 "reasoning" 中说明未检索到该客户。
+
 请严格按照要求提取 JSON 数据并返回。
 ```
+
+> 筛选框留空时不注入任何筛选指令，模型按 system 提示词默认规则解析附表全部客户。
 
 ### 文书正文的三层预处理
 
@@ -188,6 +199,7 @@ user 消息 = **开头包装语 + 文书正文 + 收尾指令**，其中文书�
 
 1. **多协议号分账**：同一被告多行附表 → 逐行提取到 `loans[]`，协议号归一化（去斜杠/空格），用于与扣款回单的借据号匹配分账；
 2. **批量案件**：`isBatchCase=true` + `batchClients[]` 逐客户提取，每位客户利率独立，严禁套用同一利率；
-3. **还款流水**：回单明细提取到 `repayments[]`，参与判决后本金冲减与动态计息；
-4. **防截断**（2026-10-14 新增）：最小化 JSON 输出 + 省略空字段 + 精简 reasoning/keyPoints，配合服务端截断抢救逻辑（[llmService.ts](file:///d:/ClaimLex/src/services/llmService.ts#L313) `repairTruncatedJson`）；
-5. **回单兜底**：若模型未输出 repayments 但文本含回单特征，系统会用本地规则解析器 [repaymentReceiptParser.ts](file:///d:/ClaimLex/src/parser/repaymentReceiptParser.ts) 自动补齐流水。
+3. **客户筛选**（2026-10-14 新增）：解析文本框下方「客户筛选」输入框输入姓名后，user 消息注入最高优先级指令，模型仅输出该客户数据（`batchClients` 只含 1 条、顶层字段填该客户数值），多人判决书可大幅节省输出 token；留空则全量解析；
+4. **还款流水**：回单明细提取到 `repayments[]`，参与判决后本金冲减与动态计息；
+5. **防截断**（2026-10-14 新增）：最小化 JSON 输出 + 省略空字段 + 精简 reasoning/keyPoints，配合服务端截断抢救逻辑（[llmService.ts](file:///d:/ClaimLex/src/services/llmService.ts#L313) `repairTruncatedJson`）；
+6. **回单兜底**：若模型未输出 repayments 但文本含回单特征，系统会用本地规则解析器 [repaymentReceiptParser.ts](file:///d:/ClaimLex/src/parser/repaymentReceiptParser.ts) 自动补齐流水。
