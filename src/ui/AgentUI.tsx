@@ -363,6 +363,7 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
   const [apiRunning, setApiRunning] = useState(false);
   const [apiStartedAt, setApiStartedAt] = useState(0);
   const [apiNow, setApiNow] = useState(0);
+  const apiStartedAtRef = useRef(0);
   const [apiStats, setApiStats] = useState({ reasoning: 0, content: 0 });
   const [apiUsage, setApiUsage] = useState('');
   const apiLogRef = useRef('');
@@ -896,6 +897,7 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
     setApiStats({ reasoning: 0, content: 0 });
     setApiUsage('');
     setApiStartedAt(Date.now());
+    apiStartedAtRef.current = Date.now();
     setApiNow(Date.now());
     setApiRunning(true);
     setShowApiPanel(true);
@@ -978,7 +980,7 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
     } catch (err: any) {
       console.error('大模型解析调用失败:', err);
       setErrorMessage(err.message || '大模型调用异常，请检查网络或配置');
-      appendApiEvent(`❌ 调用失败: ${err.message || '未知异常'}（总耗时 ${Math.round((Date.now() - apiStartedAt) / 1000)} 秒，可在悬浮日志中定位中断位置）`);
+      appendApiEvent(`❌ 调用失败: ${err.message || '未知异常'}（总耗时 ${Math.round((Date.now() - (apiStartedAtRef.current || Date.now())) / 1000)} 秒，可在悬浮日志中定位中断位置）`);
       setShowApiPanel(true);
     } finally {
       setApiRunning(false);
@@ -2533,6 +2535,28 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => {
+                  const log = apiLogRef.current;
+                  if (!log.trim()) {
+                    alert('当前暂无可导出的日志内容');
+                    return;
+                  }
+                  const blob = new Blob([log], { type: 'text/plain;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `模型原始输出_${dayjs().format('YYYYMMDD_HHmmss')}.txt`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }}
+                title="将当前原始流日志导出为 txt 文件，便于排查"
+                className="px-2 py-1 text-[10px] rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+              >
+                导出
+              </button>
               <button
                 onClick={() => { apiLogRef.current = ''; apiSectionFlagsRef.current = { reasoning: false, content: false }; setApiLog(''); }}
                 className="px-2 py-1 text-[10px] rounded-md bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700 transition"

@@ -307,6 +307,50 @@ export async function testLLMConnection(config: LLMConfig): Promise<{ success: b
 }
 
 /**
+ * 截断 JSON 抢救：批量案件附表客户很多时，模型输出可能达到 max_tokens 上限被截断，
+ * 此时按"最后一个结构闭合点"向前回溯，补齐未闭合的括号，抢救已完整输出的客户数据
+ */
+function repairTruncatedJson(text: string): any | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  const s = text.slice(start);
+
+  const stack: string[] = [];
+  const safePoints: { pos: number; closers: string }[] = [];
+  let inStr = false;
+  let esc = false;
+
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+    } else if (c === '{' || c === '[') {
+      stack.push(c === '{' ? '}' : ']');
+    } else if (c === '}' || c === ']') {
+      stack.pop();
+      safePoints.push({ pos: i + 1, closers: stack.slice().reverse().join('') });
+    }
+  }
+
+  // 从最后一个结构闭合点向前尝试补齐闭合并解析（限制次数避免长文卡顿）
+  const maxAttempts = 300;
+  for (let k = safePoints.length - 1, tried = 0; k >= 0 && tried < maxAttempts; k--, tried++) {
+    try {
+      return JSON.parse(s.slice(0, safePoints[k].pos) + safePoints[k].closers);
+    } catch {
+      // 继续向前回溯
+    }
+  }
+  return null;
+}
+
+/**
  * 健壮的 JSON 解析器：从大模型输出的混合文本或 Markdown 中提取 JSON
  */
 export function extractJSONFromLLMOutput(rawText: string): any {
@@ -335,11 +379,16 @@ export function extractJSONFromLLMOutput(rawText: string): any {
   // 3. 寻找最外层的 { ... }
   const firstBrace = rawText.indexOf('{');
   const lastBrace = rawText.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    const candidate = rawText.substring(firstBrace, lastBrace + 1);
+  if (firstBrace !== -1) {
+    const candidate = lastBrace > firstBrace ? rawText.substring(firstBrace, lastBrace + 1) : rawText.slice(firstBrace);
     try {
       return JSON.parse(candidate);
     } catch (e: any) {
+      // 4. 输出达到 max_tokens 上限被截断时，抢救已完整输出的部分数据（如前 N 位客户）
+      const salvaged = repairTruncatedJson(rawText);
+      if (salvaged) {
+        return salvaged;
+      }
       throw new Error(`从模型输出中提取到 JSON 片段，但解析失败: ${e.message}\n原始片段:\n${candidate.slice(0, 300)}...`);
     }
   }
@@ -577,6 +626,7 @@ export async function analyzeJudgmentWithLLM(
     let rawContent = '';
     let reasoningText = '';
     let usageInfo: any = null;
+    let finishReason = '';
     let receivedChars = 0;
 
     if (contentType.includes('text/event-stream') && response.body) {
@@ -610,6 +660,8 @@ export async function analyzeJudgmentWithLLM(
               usageInfo = chunk.usage;
               streamHooks?.onUsage?.(chunk.usage);
             }
+            const chunkFinish = chunk.choices?.[0]?.finish_reason;
+            if (chunkFinish) finishReason = chunkFinish;
             const delta = chunk.choices?.[0]?.delta;
             if (delta?.reasoning_content) {
               reasoningText += delta.reasoning_content;
@@ -638,6 +690,7 @@ export async function analyzeJudgmentWithLLM(
       disarmIdleTimer();
       rawContent = responseData.choices?.[0]?.message?.content || '';
       reasoningText = responseData.choices?.[0]?.message?.reasoning_content || '';
+      finishReason = responseData.choices?.[0]?.finish_reason || '';
       usageInfo = responseData.usage || null;
       if (usageInfo) streamHooks?.onUsage?.(usageInfo);
     }
@@ -652,8 +705,16 @@ export async function analyzeJudgmentWithLLM(
       streamHooks?.onEvent?.(`token 用量: ${JSON.stringify(usageInfo)}`);
     }
 
+    if (finishReason === 'length') {
+      streamHooks?.onEvent?.('⚠️ 模型输出因达到 max_tokens 上限被截断：正在尝试抢救已完整输出的部分数据（如前 N 位客户），未输出到的客户会缺失。建议关闭深度思考后重试，或将文书分段提取后合并。');
+    }
+
     // 结构化提取 JSON
     const parsedJson = extractJSONFromLLMOutput(rawContent);
+    if (finishReason === 'length') {
+      const clientCount = Array.isArray(parsedJson?.batchClients) ? parsedJson.batchClients.length : 0;
+      streamHooks?.onEvent?.(`⚠️ 截断抢救完成：本次仅加载 ${clientCount} 位客户，请核对名单完整性后再计算`);
+    }
     const { params, extra } = normalizeExtractedParams(parsedJson);
 
     // 智能兜底：若文档包含扣款回单/流水特征，自动补齐流水抽取
