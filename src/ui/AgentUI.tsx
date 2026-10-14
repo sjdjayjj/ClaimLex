@@ -348,6 +348,8 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [extractStats, setExtractStats] = useState<{ pages: number; chars: number; filtered: number; masked: number } | null>(null);
+  // 客户筛选：多人判决书时仅提取指定客户数据，节省 token
+  const [clientFilter, setClientFilter] = useState('');
   const [scannedWarning, setScannedWarning] = useState(false);
   
   // 大模型与解析状态
@@ -911,6 +913,7 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
       const parsedData = await analyzeJudgmentWithLLM(safeInput, llmConfig, (statusText) => {
         setParseProgressText(statusText);
       }, {
+        clientFilter: clientFilter.trim() || undefined,
         onEvent: (text) => appendApiEvent(text),
         onReasoningDelta: (text) => {
           if (!apiSectionFlagsRef.current.reasoning) {
@@ -1246,7 +1249,22 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                 />
 
                 <div className="flex flex-wrap justify-between items-center px-4 py-2 bg-slate-900/80 rounded-b-lg border-t border-slate-800 text-xs text-slate-400 gap-2">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="flex items-center gap-1.5" title="多人判决书/批量案件时，输入目标客户姓名（如：戴伟），大模型将只提取该客户相关数据并返回，其余客户全部忽略，大幅节省 token 与响应时间。留空则解析全部客户。">
+                      <span className="text-slate-400 shrink-0">客户筛选</span>
+                      <input
+                        type="text"
+                        value={clientFilter}
+                        onChange={(e) => setClientFilter(e.target.value)}
+                        placeholder="输入姓名，仅解析该客户"
+                        className="w-40 px-2 py-1 rounded-md bg-slate-950 border border-slate-700 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors text-xs"
+                      />
+                      {clientFilter.trim() && (
+                        <span className="text-emerald-400 shrink-0 flex items-center gap-0.5">
+                          <Filter className="w-3 h-3" /> 仅提取「{clientFilter.trim()}」
+                        </span>
+                      )}
+                    </label>
                     {uploadedFileName ? (
                       <span className="text-emerald-400 flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" /> 已加载：{uploadedFileName}

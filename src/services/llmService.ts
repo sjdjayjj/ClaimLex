@@ -515,8 +515,12 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
   };
 }
 
-/** 流式过程钩子：用于悬浮窗实时展示模型 API 原始输出 */
+/**
+ * 流式过程钩子：用于悬浮窗实时展示模型 API 原始输出
+ */
 export interface LLMStreamHooks {
+  /** 客户筛选：多人判决书/批量案件时仅提取指定客户数据（节省 token），空则解析全部客户 */
+  clientFilter?: string;
   /** 模型思考过程 (reasoning_content) 增量 */
   onReasoningDelta?: (text: string) => void;
   /** 模型最终输出 (content) 增量 */
@@ -572,7 +576,12 @@ export async function analyzeJudgmentWithLLM(
   try {
     const headers = buildRequestHeaders(config);
 
-    const userContent = `以下是需要深度审阅和清算的借贷纠纷裁判文书/合同文本内容：\n\n${documentText.trim()}\n\n请严格按照要求提取 JSON 数据并返回。`;
+    // 客户筛选指令：多人判决书时仅提取目标客户数据，避免输出全部客户浪费 token
+    const clientFilterInstruction = streamHooks?.clientFilter
+      ? `\n\n【用户指定客户筛选（最高优先级指令，必须严格执行）】：\n本次解析用户只关注客户「${streamHooks.clientFilter}」。请遵守：\n1. 仅提取该客户（按姓名精确匹配，姓名完全一致即可）在附表/正文中的全部数据；其余所有客户的行与数据一律忽略，严禁输出；\n2. "batchClients" 数组只包含该客户 1 条记录；顶层 "principal"、"baseInterest"、"basePenalty"、"defendant"、"caseNo"、"fixedRate" 等字段一律填该客户（而非附表第 1 位客户）的数值；\n3. 该客户名下若有多个协议号行，仍须在其 "loans" 数组中逐行完整提取，不得省略；\n4. "repayments" 若文书中含还款记录，仅保留与该客户相关（或无法区分归属时的全部）记录；\n5. 若文书中找不到该客户，"batchClients" 输出空数组 [] 并在 "reasoning" 中说明未检索到该客户。`
+      : '';
+
+    const userContent = `以下是需要深度审阅和清算的借贷纠纷裁判文书/合同文本内容：\n\n${documentText.trim()}${clientFilterInstruction}\n\n请严格按照要求提取 JSON 数据并返回。`;
 
     const requestBody = {
       model: config.model.trim(),
