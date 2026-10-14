@@ -38,6 +38,35 @@ export interface LLMConfig {
 }
 
 /**
+ * 附表中同一被告名下单笔贷款（单个贷款协议号）分项明细
+ * 一个客户的欠款可能由多笔贷款（多个协议号）构成，每笔需独立计息后再加总
+ */
+export interface BatchClientLoan {
+  /** 贷款协议号/借据号 (如 811032383950002，归一化后不含斜杠与空格) */
+  agreementNo: string;
+  /** 该协议贷款本金 (元) */
+  principal: number;
+  /** 该协议拖欠利息 (元) */
+  baseInterest?: number;
+  /** 该协议拖欠罚息 (元) */
+  basePenalty?: number;
+  /** 该协议拖欠复利 (元) */
+  baseCompound?: number;
+  /** 该协议贷款年利率 (%) */
+  annualRate?: number;
+  /** 该协议罚息复利年利率 (%) */
+  penaltyRate?: number;
+  /** 贷款期数 (月) */
+  termMonths?: number;
+  /** 放款时间 (YYYY-MM-DD) */
+  loanStartDate?: string;
+  /** 到期时间 (YYYY-MM-DD) */
+  loanDueDate?: string;
+  /** 该协议罚息复利暂计日 / 截息日期 (YYYY-MM-DD) */
+  cutoffDate?: string;
+}
+
+/**
  * 批量案件中的单个借款人/被告客户要素明细
  */
 export interface BatchCaseClient {
@@ -87,6 +116,8 @@ export interface BatchCaseClient {
   litigationFee?: number;
   /** 保全费 (元) */
   preservationFee?: number;
+  /** 该客户名下的分协议号贷款明细（附表中同一被告多行时逐行提取；单协议客户可为空） */
+  loans?: BatchClientLoan[];
   /** 备注 */
   notes?: string;
 }

@@ -1,11 +1,13 @@
-import { 
-  CalculationParams, 
-  CalculationResult, 
-  CalculationInterval, 
-  RateMode, 
-  LPRTerm, 
+import {
+  CalculationParams,
+  CalculationResult,
+  CalculationInterval,
+  RateMode,
+  LPRTerm,
   RepaymentAllocationItem,
+  RepaymentRecord,
   SettlementConfirmation,
+  AgreementSummary,
   DeductionStrategy,
   DayCountConvention,
   DelayBaseMode
@@ -507,4 +509,186 @@ export class InterestCalculator {
       intervals
     };
   }
+}
+
+/**
+ * 归一化贷款协议号/借据号：去除斜杠、反斜杠、连字符与所有空白
+ * (回单借据号常写作 811032383950/002，附表协议号为 811032383950002，归一化后即可匹配)
+ */
+export function normalizeAgreementNo(raw?: string | null): string {
+  if (!raw) return '';
+  return String(raw).replace(/[\s/\\\-－—／]/g, '').trim();
+}
+
+/**
+ * 分协议号计算的单笔贷款输入要素
+ */
+export interface AgreementLoanInput {
+  /** 贷款协议号 (归一化格式) */
+  agreementNo: string;
+  /** 该协议贷款本金 (元) */
+  principal: number;
+  /** 该协议基准日前暂计利息 (元) */
+  baseInterest?: number;
+  /** 该协议基准日前暂计罚息+复利 (元) */
+  basePenalty?: number;
+  /** 该协议贷款年利率 (%) */
+  annualRate?: number;
+  /** 该协议罚息复利年利率 (%)，与 annualRate 同时存在时换算为上浮倍数 */
+  penaltyRate?: number;
+  /** 该协议截息日期 (YYYY-MM-DD) */
+  cutoffDate?: string;
+}
+
+/**
+ * 分协议号计算产物
+ */
+export interface AgreementCalcResult {
+  agreementNo: string;
+  params: CalculationParams;
+  result: CalculationResult;
+}
+
+/**
+ * 多协议案件分协议独立测算引擎：
+ * 同一被告名下每笔贷款（协议号）使用各自的本金/息费/利率，并仅匹配归属该协议号的还款流水，
+ * 独立执行完整的分段计息与 Waterfall 抵充后，再汇总为客户级合并结果。
+ * 诉讼费/保全费为客户级合并债务，不参与各协议内部抵充，仅在合并层保留与结转。
+ */
+export function calculatePerAgreement(
+  baseParams: CalculationParams,
+  loans: AgreementLoanInput[],
+  repayments: RepaymentRecord[]
+): { perAgreement: AgreementCalcResult[]; merged: CalculationResult } {
+  const calculator = new InterestCalculator();
+  const perAgreement: AgreementCalcResult[] = [];
+
+  for (const loan of loans) {
+    const no = normalizeAgreementNo(loan.agreementNo);
+    const matched = repayments.filter(r => normalizeAgreementNo(r.agreementNo) === no && no !== '');
+
+    // 协议专属罚息倍数：附表同时载明协议年利率与罚息复利利率时按比值换算 (如 9.135/6.09 = 1.5)
+    let penaltyMultiple = baseParams.penaltyMultiple;
+    if (loan.penaltyRate && loan.annualRate) {
+      penaltyMultiple = Math.round((loan.penaltyRate / loan.annualRate) * 10000) / 10000;
+    }
+
+    const loanParams: CalculationParams = {
+      ...baseParams,
+      baseDate: loan.cutoffDate || baseParams.baseDate,
+      principal: roundToFen(loan.principal),
+      baseInterest: roundToFen(loan.baseInterest || 0),
+      basePenalty: roundToFen(loan.basePenalty || 0),
+      // 诉讼费/保全费为客户级合并债务，不在协议层抵充
+      litigationFee: 0,
+      preservationFee: 0,
+      fixedRate: loan.annualRate !== undefined ? loan.annualRate : baseParams.fixedRate,
+      penaltyMultiple,
+      repayments: matched,
+    };
+
+    const loanResult = calculator.calculate(loanParams);
+
+    // 标记分段与抵充分配记录归属协议号
+    loanResult.intervals = loanResult.intervals.map(iv => ({ ...iv, agreementNo: no }));
+    loanResult.settlement = {
+      ...loanResult.settlement,
+      allocations: loanResult.settlement.allocations.map(a => ({ ...a, agreementNo: no })),
+    };
+
+    perAgreement.push({ agreementNo: no, params: loanParams, result: loanResult });
+  }
+
+  const merged = mergeAgreementCalcResults(baseParams, perAgreement);
+  return { perAgreement, merged };
+}
+
+/**
+ * 将各协议独立测算结果汇总为客户级合并结果 (各协议结果逐项加总，诉讼/保全费在客户层结转)
+ */
+export function mergeAgreementCalcResults(
+  baseParams: CalculationParams,
+  perAgreement: AgreementCalcResult[]
+): CalculationResult {
+  const sum = (pick: (r: CalculationResult) => number) =>
+    roundToFen(perAgreement.reduce((acc, item) => acc + (pick(item.result) || 0), 0));
+
+  const cleanLitigationFee = roundToFen(baseParams.litigationFee || 0);
+  const cleanPreservationFee = roundToFen(baseParams.preservationFee || 0);
+  const clientFees = roundToFen(cleanLitigationFee + cleanPreservationFee);
+
+  const firstSettlement = perAgreement[0].result.settlement;
+
+  // 汇总分协议抵充分配流水（按日期排序）
+  const allocations: RepaymentAllocationItem[] = perAgreement
+    .flatMap(item => item.result.settlement.allocations)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const remainingFee = clientFees;
+  const netDebt = roundToFen(sum(r => r.netDebt) + remainingFee);
+  const totalDebt = roundToFen(sum(r => r.totalDebt) + clientFees);
+
+  const settlement: SettlementConfirmation = {
+    ...firstSettlement,
+    principalTarget: sum(r => r.settlement.principalTarget),
+    litigationFeeTarget: cleanLitigationFee,
+    preservationFeeTarget: cleanPreservationFee,
+    totalFixedDebtTarget: roundToFen(sum(r => r.settlement.principalTarget) + clientFees),
+    baseInterestTarget: sum(r => r.settlement.baseInterestTarget),
+    basePenaltyTarget: sum(r => r.settlement.basePenaltyTarget),
+    newPenaltyTarget: sum(r => r.settlement.newPenaltyTarget),
+    newCompoundTarget: sum(r => r.settlement.newCompoundTarget),
+    delayInterestTarget: sum(r => r.settlement.delayInterestTarget),
+    totalDebtTarget: totalDebt,
+    totalRepaid: sum(r => r.settlement.totalRepaid),
+    allocatedFeeTotal: 0,
+    allocatedInterestTotal: sum(r => r.settlement.allocatedInterestTotal),
+    allocatedPrincipalTotal: sum(r => r.settlement.allocatedPrincipalTotal),
+    allocatedDelayTotal: sum(r => r.settlement.allocatedDelayTotal),
+    surplusTotal: sum(r => r.settlement.surplusTotal),
+    remainingFee,
+    remainingPrincipal: sum(r => r.settlement.remainingPrincipal),
+    remainingInterest: sum(r => r.settlement.remainingInterest),
+    remainingDelay: sum(r => r.settlement.remainingDelay),
+    netDebtTotal: netDebt,
+    isFullySettled: netDebt === 0 && remainingFee === 0,
+    // 所有协议的迟延金基数均已熔断时才视为客户级熔断
+    delayTerminated: perAgreement.every(item => item.result.settlement.delayTerminated),
+    allocations,
+  };
+
+  const summaries: AgreementSummary[] = perAgreement.map(item => ({
+    agreementNo: item.agreementNo,
+    principalTarget: item.result.settlement.principalTarget,
+    baseInterest: item.result.settlement.baseInterestTarget,
+    basePenalty: item.result.settlement.basePenaltyTarget,
+    newPenalty: item.result.newPenalty,
+    newCompound: item.result.newCompound,
+    delayInterest: item.result.delayInterest,
+    totalRepaid: item.result.totalRepaid,
+    totalDebt: item.result.totalDebt,
+    netDebt: item.result.netDebt,
+  }));
+
+  return {
+    totalDays: sum(r => r.totalDays),
+    principal: sum(r => r.principal),
+    newPenalty: sum(r => r.newPenalty),
+    newCompound: sum(r => r.newCompound),
+    delayInterest: sum(r => r.delayInterest),
+    totalDebt,
+    totalRepaid: sum(r => r.totalRepaid),
+    totalRepaidPrincipal: sum(r => r.totalRepaidPrincipal),
+    totalRepaidFee: 0,
+    totalRepaidInterest: sum(r => r.totalRepaidInterest),
+    totalRepaidDelay: sum(r => r.totalRepaidDelay),
+    netDebt,
+    litigationFee: cleanLitigationFee,
+    preservationFee: cleanPreservationFee,
+    delayTerminated: settlement.delayTerminated,
+    deductionStrategy: baseParams.deductionStrategy || 'LEGAL_EXPENSE_FIRST',
+    perAgreement: summaries,
+    settlement,
+    intervals: perAgreement.flatMap(item => item.result.intervals),
+  };
 }

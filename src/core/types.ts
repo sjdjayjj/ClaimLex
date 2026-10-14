@@ -56,6 +56,8 @@ export interface RepaymentRecord {
   totalAmount: number;
   /** 是否勾选参与本次算息冲减 (默认 true) */
   selected?: boolean;
+  /** 归属贷款协议号/借据号（多协议案件按协议分账计算；归一化格式，不含斜杠与空格） */
+  agreementNo?: string;
   /** 备注说明 */
   remark?: string;
 }
@@ -65,6 +67,8 @@ export interface RepaymentRecord {
  */
 export interface RepaymentReceiptMeta {
   loanReceiptNo?: string;     // 贷款借据号 (如 811032260373/001)
+  /** 归一化协议号 (借据号去除斜杠/空格等分隔符，用于与附表贷款协议号匹配分账) */
+  agreementNo?: string;
   loanType?: string;          // 贷款品种 (如 信用贷款-消费-非场景-互联网)
   loanOrg?: string;           // 贷款机构 (如 深圳高新区支行)
   repaymentMethod?: string;   // 还款方式 (如 到期还本定期还息)
@@ -136,6 +140,8 @@ export interface CalculationInterval {
   repaidDelay?: number;
   /** 该节点冲减后尚欠本金余额 (元) */
   remainingPrincipal?: number;
+  /** 所属贷款协议号 (多协议案件分协议计算时标记) */
+  agreementNo?: string;
 }
 
 /**
@@ -144,6 +150,8 @@ export interface CalculationInterval {
 export interface RepaymentAllocationItem {
   date: string;
   serialNo?: string;
+  /** 所属贷款协议号 (多协议案件分协议计算时标记) */
+  agreementNo?: string;
   amount: number;
   allocatedFee: number;
   allocatedInterest: number;
@@ -193,6 +201,32 @@ export interface SettlementConfirmation {
   allocations: RepaymentAllocationItem[];
 }
 
+/**
+ * 多协议案件分协议号测算汇总（同一被告多笔贷款分账计算结果）
+ */
+export interface AgreementSummary {
+  /** 贷款协议号 (归一化格式) */
+  agreementNo: string;
+  /** 该协议判决确认本金 (元) */
+  principalTarget: number;
+  /** 该协议基准日前暂计利息 (元) */
+  baseInterest: number;
+  /** 该协议基准日前暂计罚息/复利 (元) */
+  basePenalty: number;
+  /** 该协议裁判后新发生利息/罚息 (元) */
+  newPenalty: number;
+  /** 该协议裁判后新发生复利 (元) */
+  newCompound: number;
+  /** 该协议加倍迟延履行金 (元) */
+  delayInterest: number;
+  /** 该协议已冲减还款总额 (元) */
+  totalRepaid: number;
+  /** 该协议债权应计总额 (元) */
+  totalDebt: number;
+  /** 该协议结欠净额 (元) */
+  netDebt: number;
+}
+
 export interface CalculationResult {
   totalDays: number;
   principal: number;
@@ -221,6 +255,8 @@ export interface CalculationResult {
   delayTerminated: boolean;
   /** 还款抵扣策略 */
   deductionStrategy: DeductionStrategy;
+  /** 多协议案件分协议号测算汇总 (单协议案件为空) */
+  perAgreement?: AgreementSummary[];
   /** 完整的《执行款分配与结清确认表》 */
   settlement: SettlementConfirmation;
 }

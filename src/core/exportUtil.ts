@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 import type { CellStyle } from 'xlsx-js-style';
 import { CalculationResult, RepaymentRecord } from './types';
+import { roundToFen } from './calculator';
 
 /* ============================================================
    「法院蓝」制式证据清单导出
@@ -288,6 +289,35 @@ export function exportToExcel(
   });
   ws1.merges.push({ s: { r: lastOverview, c: 2 }, e: { r: lastOverview, c: 2 } });
 
+  // 分协议号测算明细（同一被告多笔贷款分账独立计息）
+  if (result.perAgreement && result.perAgreement.length > 0) {
+    spacer(ws1);
+    addMergedRow(ws1, '二、分协议号测算明细（同一被告名下多笔贷款分账独立计息）', 'section', 2, 22);
+    addRow(ws1, [
+      { v: '贷款协议号', s: 'header' },
+      { v: '结欠净额（元）', s: 'header' },
+      { v: '分项明细', s: 'header' },
+    ], 22);
+    result.perAgreement.forEach((a, idx) => {
+      const zebra = idx % 2 === 1;
+      addRow(ws1, [
+        { v: a.agreementNo, s: zebra ? 'textCZebra' : 'textC' },
+        { v: Number(a.netDebt.toFixed(2)), s: zebra ? 'moneyZebra' : 'money' },
+        {
+          v: `本金￥${a.principalTarget.toFixed(2)}｜暂计利息￥${a.baseInterest.toFixed(2)}｜暂计罚息￥${a.basePenalty.toFixed(2)}｜新罚息￥${a.newPenalty.toFixed(2)}｜新复利￥${a.newCompound.toFixed(2)}｜迟延金￥${a.delayInterest.toFixed(2)}｜已冲减￥${a.totalRepaid.toFixed(2)}`,
+          s: zebra ? 'textZebra' : 'text',
+        },
+      ], 20);
+    });
+    const aggNetDebt = result.perAgreement.reduce((sum, a) => sum + a.netDebt, 0);
+    const aggPrincipal = result.perAgreement.reduce((sum, a) => sum + a.principalTarget, 0);
+    addRow(ws1, [
+      { v: '协议合计', s: 'totalLabel' },
+      { v: Number(roundToFen(aggNetDebt).toFixed(2)), s: 'totalMoney' },
+      { v: `本金合计￥${roundToFen(aggPrincipal).toFixed(2)}；各协议分项之和与上方「债权测算总览」一致`, s: 'totalText' },
+    ], 22);
+  }
+
   /* ---------------- Sheet 2：分段计息明细 ---------------- */
   const ws2 = newDraft([
     { wch: 6 }, { wch: 11 }, { wch: 11 }, { wch: 7 }, { wch: 9.5 }, { wch: 10.5 },
@@ -306,7 +336,7 @@ export function exportToExcel(
   ];
   addRow(ws2, detailHeader.map(h => ({ v: h, s: 'header' })), 30);
 
-  result.intervals.forEach((interval, idx) => {
+  const renderIntervalRow = (interval: CalculationResult['intervals'][number], idx: number) => {
     const zebra = idx % 2 === 1;
     const tS = zebra ? 'textCZebra' : 'textC';
     const tL = zebra ? 'textZebra' : 'text';
@@ -333,7 +363,45 @@ export function exportToExcel(
       { v: Number(interval.subtotal.toFixed(2)), s: mS },
       { v: interval.eventDesc || '-', s: tL },
     ], 20);
-  });
+  };
+
+  // 分协议小计行（列结构与合计行一致）
+  const addAgreementSubtotal = (agreementNo: string, ivs: CalculationResult['intervals']) => {
+    const sumOf = (pick: (iv: CalculationResult['intervals'][number]) => number) =>
+      ivs.reduce((acc, iv) => acc + (pick(iv) || 0), 0);
+    const ri = addRow(ws2, [
+      { v: `小计 ${agreementNo}`, s: 'totalLabel' }, { v: '—', s: 'totalLabel' }, { v: '—', s: 'totalLabel' },
+      { v: sumOf(iv => iv.days), s: 'totalLabel' },
+      { v: '—', s: 'totalLabel' }, { v: '—', s: 'totalLabel' },
+      { v: '—', s: 'totalLabel' }, { v: '—', s: 'totalLabel' },
+      { v: Number(roundToFen(sumOf(iv => iv.interest)).toFixed(2)), s: 'totalMoney' },
+      { v: Number(roundToFen(sumOf(iv => iv.compound)).toFixed(2)), s: 'totalMoney' },
+      { v: Number(roundToFen(sumOf(iv => iv.delay)).toFixed(2)), s: 'totalMoney' },
+      { v: Number(roundToFen(sumOf(iv => iv.repaidTotal)).toFixed(2)), s: 'totalMoney' },
+      { v: Number(roundToFen(sumOf(iv => iv.repaidFee)).toFixed(2)), s: 'totalMoney' },
+      { v: Number(roundToFen(sumOf(iv => iv.repaidInterest)).toFixed(2)), s: 'totalMoney' },
+      { v: Number(roundToFen(sumOf(iv => iv.repaidPrincipal)).toFixed(2)), s: 'totalMoney' },
+      { v: Number(roundToFen(sumOf(iv => iv.repaidDelay)).toFixed(2)), s: 'totalMoney' },
+      { v: '—', s: 'totalLabel' },
+      { v: Number(roundToFen(sumOf(iv => iv.subtotal)).toFixed(2)), s: 'totalMoney' },
+      { v: `共 ${ivs.length} 个计息区间`, s: 'totalText' },
+    ], 22);
+    ws2.merges.push({ s: { r: ri, c: 0 }, e: { r: ri, c: 2 } });
+  };
+
+  // 多协议案件：按协议号分组渲染（列结构不变，仅插入协议分组标题与小计行）
+  if (result.perAgreement && result.perAgreement.length > 0) {
+    let globalIdx = 0;
+    result.perAgreement.forEach((agg) => {
+      const ivs = result.intervals.filter(iv => iv.agreementNo === agg.agreementNo);
+      addMergedRow(ws2, `协议号 ${agg.agreementNo} （本金￥${agg.principalTarget.toFixed(2)} · 结欠净额￥${agg.netDebt.toFixed(2)}）`, 'section', 18, 22);
+      ivs.forEach((interval) => { renderIntervalRow(interval, globalIdx++); });
+      addAgreementSubtotal(agg.agreementNo, ivs);
+      spacer(ws2);
+    });
+  } else {
+    result.intervals.forEach((interval, idx) => renderIntervalRow(interval, idx));
+  }
 
   // 合计行
   const sumOf = (pick: (iv: CalculationResult['intervals'][number]) => number) =>
@@ -471,7 +539,8 @@ export function exportToExcel(
     '序号', '还款日期', '交易流水号', '还款入账金额（元）', '抵充费用（元）',
     '抵充利息罚息（元）', '抵充借款本金（元）', '抵充迟延履行金（元）', '超额溢缴款（元）',
   ].map(h => ({ v: h, s: 'header' }) as Cell), 30);
-  s.allocations.forEach((item, idx) => {
+
+  const renderAllocationRow = (item: typeof s.allocations[number], idx: number) => {
     const zebra = idx % 2 === 1;
     const tS: string = zebra ? 'textCZebra' : 'textC';
     const mS: string = zebra ? 'moneyZebra' : 'money';
@@ -486,7 +555,27 @@ export function exportToExcel(
       { v: Number(item.allocatedDelay.toFixed(2)), s: mS },
       { v: Number(item.surplusAmount.toFixed(2)), s: mS },
     ], 20);
-  });
+  };
+
+  // 多协议案件：抵充分配流水按协议号分组展示（列结构不变）
+  if (s.allocations.some(a => a.agreementNo)) {
+    const groups = new Map<string, typeof s.allocations>();
+    s.allocations.forEach(item => {
+      const key = item.agreementNo || '未匹配协议号';
+      const list = groups.get(key) || [];
+      list.push(item);
+      groups.set(key, list);
+    });
+    let globalIdx = 0;
+    groups.forEach((list, key) => {
+      const groupTotal = list.reduce((sum, a) => sum + a.amount, 0);
+      addMergedRow(ws4, `协议号 ${key} （共 ${list.length} 笔 · 入账￥${roundToFen(groupTotal).toFixed(2)}）`, 'section', 8, 22);
+      list.forEach(item => { renderAllocationRow(item, globalIdx++); });
+      spacer(ws4);
+    });
+  } else {
+    s.allocations.forEach((item, idx) => renderAllocationRow(item, idx));
+  }
 
   /* ---------------- Sheet 5：银行扣款流水（如有） ---------------- */
   const wb = XLSX.utils.book_new();
@@ -507,7 +596,8 @@ export function exportToExcel(
       '序号', '交易流水号', '扣款日期', '归还本金(元)', '归还利息(元)',
       '归还罚息(元)', '归还复利(元)', '还款总额(元)', '参与算息状态', '说明',
     ].map(h => ({ v: h, s: 'header' }) as Cell), 30);
-    meta.repayments.forEach((r, idx) => {
+
+    const renderRepaymentRow = (r: RepaymentRecord, idx: number) => {
       const zebra = idx % 2 === 1;
       const tS: string = zebra ? 'textCZebra' : 'textC';
       const mS: string = zebra ? 'moneyZebra' : 'money';
@@ -523,7 +613,38 @@ export function exportToExcel(
         { v: r.selected !== false ? '已参与冲减' : '未参与', s: tS },
         { v: r.remark || '', s: zebra ? 'textZebra' : 'text' },
       ], 20);
-    });
+    };
+
+    // 多协议案件：扣款流水按协议号分组展示，并输出各协议小计（列结构不变）
+    if (meta.repayments.some(r => r.agreementNo)) {
+      const groups = new Map<string, RepaymentRecord[]>();
+      meta.repayments.forEach(r => {
+        const key = r.agreementNo || '未匹配协议号';
+        const list = groups.get(key) || [];
+        list.push(r);
+        groups.set(key, list);
+      });
+      let globalIdx = 0;
+      groups.forEach((list, key) => {
+        const sumBy = (pick: (r: RepaymentRecord) => number) =>
+          roundToFen(list.reduce((sum, r) => sum + pick(r), 0));
+        addMergedRow(ws5, `协议号 ${key} （共 ${list.length} 笔 · 累计还款￥${sumBy(r => r.totalAmount).toFixed(2)}）`, 'section', 9, 22);
+        list.forEach(r => { renderRepaymentRow(r, globalIdx++); });
+        addRow(ws5, [
+          { v: '小计', s: 'totalLabel' }, { v: '—', s: 'totalLabel' }, { v: '—', s: 'totalLabel' },
+          { v: sumBy(r => r.principal), s: 'totalMoney' },
+          { v: sumBy(r => r.interest), s: 'totalMoney' },
+          { v: sumBy(r => r.penalty), s: 'totalMoney' },
+          { v: sumBy(r => r.compound), s: 'totalMoney' },
+          { v: sumBy(r => r.totalAmount), s: 'totalMoney' },
+          { v: '—', s: 'totalLabel' },
+          { v: `共 ${list.length} 笔流水`, s: 'totalText' },
+        ], 22);
+        spacer(ws5);
+      });
+    } else {
+      meta.repayments.forEach((r, idx) => renderRepaymentRow(r, idx));
+    }
     XLSX.utils.book_append_sheet(wb, buildSheet(ws5), '银行扣款流水');
   }
 

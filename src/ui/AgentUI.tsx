@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { InterestCalculator, roundToFen } from '../core/calculator';
+import { InterestCalculator, roundToFen, calculatePerAgreement, normalizeAgreementNo } from '../core/calculator';
 import { CalculationParams, CalculationResult, RepaymentRecord, RepaymentReceiptMeta } from '../core/types';
 import { RATE_HISTORY } from '../core/rates';
 import { extractTextFromPDF } from '../parser/pdfUtil';
@@ -247,6 +247,78 @@ export const SAMPLE_BATCH_CLIENTS: BatchCaseClient[] = [
     preservationFee: 0,
     notes: '1年期LPR+90BP，上浮50%',
   },
+  {
+    id: '8',
+    caseNo: '(2023)粤0304民初88001号',
+    defendant: '戴某',
+    gender: '男',
+    nation: '汉族',
+    idCard: '4****************1',
+    idAddress: '广东省东莞市××镇××路××号（已脱敏）',
+    principal: 111022.17,
+    baseInterest: 1126.50,
+    basePenalty: 11747.60,
+    baseCompound: 144.65,
+    cutoffDate: '2023-03-20',
+    rateMode: 'FIXED',
+    annualRate: 6.09,
+    fixedRate: 6.09,
+    penaltyMultiple: 1.5,
+    penaltyRate: 9.135,
+    litigationFee: 1346.81,
+    preservationFee: 0,
+    notes: '多协议号客户：同一被告名下 4 笔贷款协议，附表分项列示，需分协议独立计息后汇总',
+    loans: [
+      {
+        agreementNo: '811032383950002',
+        principal: 53216.53,
+        baseInterest: 612.38,
+        basePenalty: 5871.14,
+        baseCompound: 71.29,
+        annualRate: 6.09,
+        penaltyRate: 9.135,
+        loanStartDate: '2020-06-21',
+        loanDueDate: '2023-06-21',
+        cutoffDate: '2023-03-20',
+      },
+      {
+        agreementNo: '811032383950003',
+        principal: 24891.42,
+        baseInterest: 187.55,
+        basePenalty: 2103.77,
+        baseCompound: 25.66,
+        annualRate: 6.09,
+        penaltyRate: 9.135,
+        loanStartDate: '2020-08-15',
+        loanDueDate: '2023-08-15',
+        cutoffDate: '2023-03-20',
+      },
+      {
+        agreementNo: '811032383950004',
+        principal: 18914.22,
+        baseInterest: 154.09,
+        basePenalty: 1836.02,
+        baseCompound: 22.41,
+        annualRate: 6.09,
+        penaltyRate: 9.135,
+        loanStartDate: '2020-09-30',
+        loanDueDate: '2023-09-30',
+        cutoffDate: '2023-03-20',
+      },
+      {
+        agreementNo: '811032383950005',
+        principal: 14000.00,
+        baseInterest: 172.48,
+        basePenalty: 1936.67,
+        baseCompound: 25.29,
+        annualRate: 6.09,
+        penaltyRate: 9.135,
+        loanStartDate: '2020-11-11',
+        loanDueDate: '2023-11-11',
+        cutoffDate: '2023-03-20',
+      },
+    ],
+  },
 ];
 
 /**
@@ -332,9 +404,9 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [clientSearchKeyword, setClientSearchKeyword] = useState<string>('');
 
-  // 银行扣款明细 / 还款流水状态 (支持多笔勾选参与算息)
+  // 银行扣款明细 / 还款流水状态 (支持多笔勾选参与算息；多协议案件支持多份回单按协议号分账)
   const [repayments, setRepayments] = useState<RepaymentRecord[]>([]);
-  const [receiptMeta, setReceiptMeta] = useState<RepaymentReceiptMeta | null>(null);
+  const [receiptMetas, setReceiptMetas] = useState<RepaymentReceiptMeta[]>([]);
   const [isRepaymentSectionOpen, setIsRepaymentSectionOpen] = useState<boolean>(true);
   const repaymentFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -355,54 +427,140 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
     );
   });
 
-  // 触发核心热重算
-  const triggerRecalculate = (targetParams: CalculationParams, targetRepayments?: RepaymentRecord[]) => {
-    const activeRepayments = targetRepayments !== undefined ? targetRepayments : repayments;
+  // 获取当前选中客户名下的分协议号贷款明细（≥2 个协议号时启用分协议独立计算）
+  const getSelectedClientLoans = () => {
+    const clientId = analysisResult?.selectedClientId || selectedClientId;
+    const client = analysisResult?.batchClients?.find(c => c.id === clientId);
+    return (client?.loans || []).filter(l => !!l.agreementNo);
+  };
+
+  // 核心计算分发：多协议客户按协议号分账独立计息后汇总；单协议客户走整体测算
+  // overrideClient 用于切换客户/初次解析场景，避免读到尚未更新的选中态
+  const runCalculation = (
+    targetParams: CalculationParams,
+    targetRepayments: RepaymentRecord[],
+    overrideClient?: BatchCaseClient | null
+  ) => {
+    const loans = overrideClient !== undefined
+      ? (overrideClient?.loans || []).filter(l => !!l.agreementNo)
+      : getSelectedClientLoans();
     const finalParams: CalculationParams = {
       ...targetParams,
-      repayments: activeRepayments,
+      repayments: targetRepayments,
     };
     setParams(finalParams);
     try {
+      if (loans.length >= 2) {
+        const { merged } = calculatePerAgreement(
+          finalParams,
+          loans.map(l => ({
+            agreementNo: l.agreementNo,
+            principal: l.principal,
+            baseInterest: l.baseInterest,
+            basePenalty: (l.basePenalty || 0) + (l.baseCompound || 0),
+            annualRate: l.annualRate,
+            penaltyRate: l.penaltyRate,
+            cutoffDate: l.cutoffDate,
+          })),
+          targetRepayments
+        );
+        setResult(merged);
+        return;
+      }
       const calculator = new InterestCalculator();
-      const calcResult = calculator.calculate(finalParams);
-      setResult(calcResult);
+      setResult(calculator.calculate(finalParams));
     } catch (err) {
       console.error('利息计算执行异常:', err);
     }
   };
 
-  // 单独上传银行扣款明细 / 还款回单 PDF
-  const handleRepaymentPdfUpload = async (file: File) => {
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+  // 触发核心热重算
+  const triggerRecalculate = (targetParams: CalculationParams, targetRepayments?: RepaymentRecord[]) => {
+    const activeRepayments = targetRepayments !== undefined ? targetRepayments : repayments;
+    runCalculation(targetParams, activeRepayments);
+  };
+
+  // 批量上传银行扣款明细 / 还款回单 PDF（多协议号案件每个协议号一份回单，逐份解析后按协议号合并）
+  const handleRepaymentPdfUpload = async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList).filter(Boolean);
+    if (files.length === 0) return;
+    const invalid = files.find(f => !f.name.toLowerCase().endsWith('.pdf') && f.type !== 'application/pdf');
+    if (invalid) {
       alert('请上传 PDF 格式的银行扣款回单或还款流水清单');
       return;
     }
     setIsUploading(true);
-    setParseProgressText('正在读取并提取银行扣款回单 PDF 表格流水...');
+    setParseProgressText(`正在解析 ${files.length} 份扣款回单 PDF...`);
     try {
-      const extractRes = await extractTextFromPDF(file);
-      const parsedReceipt = parseRepaymentReceiptFromText(desensitizeText(extractRes.text).text);
-      if (parsedReceipt.records.length === 0) {
-        alert('未在上传的 PDF 中探测到格式化扣款明细流水，请核对是否为包含流水号与扣款金额的回单');
+      const mergedNewRecords: RepaymentRecord[] = [];
+      const newMetas: RepaymentReceiptMeta[] = [];
+      const failedFiles: string[] = [];
+      let lastMeta: RepaymentReceiptMeta = {};
+      let totalRepaidSum = 0;
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setParseProgressText(`正在解析第 ${i + 1}/${files.length} 份回单：${file.name}`);
+        try {
+          const extractRes = await extractTextFromPDF(file);
+          const parsedReceipt = parseRepaymentReceiptFromText(desensitizeText(extractRes.text).text);
+          if (parsedReceipt.records.length === 0) {
+            failedFiles.push(file.name);
+            continue;
+          }
+
+          // 回单 meta 中的借款人姓名/证件号强制脱敏
+          const safeMeta = desensitizeReceiptMeta(parsedReceipt.meta);
+          lastMeta = safeMeta;
+          totalRepaidSum += parsedReceipt.totalRepaidSum;
+          newMetas.push(safeMeta);
+
+          // 回单级协议号（借据号归一化）；流水级 agreementNo 缺失时回退使用回单级
+          const receiptAgreementNo = safeMeta.agreementNo
+            || (safeMeta.loanReceiptNo ? normalizeAgreementNo(safeMeta.loanReceiptNo) : undefined);
+          parsedReceipt.records.forEach((r, ri) => {
+            const rawAgreement = r.agreementNo || receiptAgreementNo || '';
+            mergedNewRecords.push({
+              ...r,
+              id: `${Date.now()}-${i}-${ri}`,
+              agreementNo: rawAgreement ? normalizeAgreementNo(rawAgreement) : undefined,
+              selected: true,
+            });
+          });
+        } catch (fileErr: any) {
+          console.error(`回单 ${file.name} 解析失败:`, fileErr);
+          failedFiles.push(file.name);
+        }
+      }
+
+      if (mergedNewRecords.length === 0) {
+        alert(failedFiles.length > 0
+          ? `以下回单未探测到格式化扣款明细流水，请核对是否为包含流水号与扣款金额的回单：\n${failedFiles.join('\n')}`
+          : '未在上传的 PDF 中探测到格式化扣款明细流水，请核对是否为包含流水号与扣款金额的回单');
         return;
       }
 
-      // 回单 meta 中的借款人姓名/证件号强制脱敏
-      const safeMeta = desensitizeReceiptMeta(parsedReceipt.meta);
-      setReceiptMeta(safeMeta);
-      const baseDate = params?.baseDate || safeMeta.loanDueDate || '2019-12-10';
-      const initializedRecords = parsedReceipt.records.map(r => ({
+      const baseDate = params?.baseDate || lastMeta.loanDueDate || '2019-12-10';
+      const initializedRecords = mergedNewRecords.map(r => ({
         ...r,
         selected: dayjs(r.date).isAfter(dayjs(baseDate)),
       }));
-      setRepayments(initializedRecords);
+
+      // 多份回单按协议号合并：同一协议号重复上传时，以最新回单流水覆盖旧记录
+      const newAgreements = new Set(
+        initializedRecords.map(r => r.agreementNo).filter((v): v is string => !!v)
+      );
+      const finalRepayments = [
+        ...repayments.filter(r => !(r.agreementNo && newAgreements.has(r.agreementNo))),
+        ...initializedRecords,
+      ];
+      setRepayments(finalRepayments);
+      setReceiptMetas(prev => [...prev, ...newMetas]);
 
       const currentParams: CalculationParams = params || {
         baseDate,
         endDate: dayjs().format('YYYY-MM-DD'),
-        principal: parsedReceipt.meta.loanAmount || 258700,
+        principal: lastMeta.loanAmount || 258700,
         baseInterest: 0,
         basePenalty: 0,
         rateMode: 'LPR',
@@ -420,21 +578,20 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
       if (!analysisResult) {
         setAnalysisResult({
           params: currentParams,
-          caseNo: parsedReceipt.meta.loanReceiptNo ? `借据:${parsedReceipt.meta.loanReceiptNo}` : '银行扣款回单测算',
-          plaintiff: parsedReceipt.meta.loanOrg || '深圳高新区支行',
-          defendant: parsedReceipt.meta.borrowerName || '借款人',
-          reasoning: `【银行扣款流水已提取】：共导入 ${initializedRecords.length} 笔扣款流水，累计还款 ￥${formatMoney(parsedReceipt.totalRepaidSum)} 元。系统已自动按基准日（${baseDate}）智能匹配判决后生效抵扣流水，并切入分段利息冲减模型。`,
+          caseNo: lastMeta.loanReceiptNo ? `借据:${lastMeta.loanReceiptNo}` : '银行扣款回单测算',
+          plaintiff: lastMeta.loanOrg || '深圳高新区支行',
+          defendant: lastMeta.borrowerName || '借款人',
+          reasoning: `【银行扣款流水已提取】：共导入 ${files.length} 份扣款回单、${initializedRecords.length} 笔流水，累计还款 ￥${formatMoney(totalRepaidSum)} 元${newAgreements.size > 1 ? `，覆盖 ${newAgreements.size} 个贷款协议号，已启用分协议号独立计息与分账冲抵` : ''}。系统已自动按基准日（${baseDate}）智能匹配判决后生效抵扣流水，并切入分段利息冲减模型。`,
           keyPoints: [
-            `成功提取贷款借据：${parsedReceipt.meta.loanReceiptNo || '未指定'}，借款金额 ￥${formatMoney(parsedReceipt.meta.loanAmount)}`,
-            `共解析出 ${initializedRecords.length} 笔流水，基准日后还款将自动冲减计息本金`,
+            `成功提取贷款借据：${lastMeta.loanReceiptNo || '未指定'}，借款金额 ￥${formatMoney(lastMeta.loanAmount)}`,
+            `共解析出 ${initializedRecords.length} 笔流水${newAgreements.size > 1 ? `，覆盖 ${newAgreements.size} 个协议号（每个协议号独立计息后再汇总）` : ''}，基准日后还款将自动冲减计息本金`,
             '支持在还款明细表中自由勾选或排除任一还款项进行敏感性测算'
           ],
-          repayments: initializedRecords,
-          receiptMeta: parsedReceipt.meta,
+          repayments: finalRepayments,
         });
       }
 
-      triggerRecalculate(currentParams, initializedRecords);
+      triggerRecalculate(currentParams, finalRepayments);
     } catch (err: any) {
       console.error('扣款回单解析失败:', err);
       alert(`扣款回单解析失败: ${err.message || '文件格式异常'}`);
@@ -446,7 +603,7 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
 
   // 载入扣款回单样例（对应深圳高新区支行 秦某 258,700 元贷款扣款回单与司法裁判标准，已脱敏）
   const handleLoadSampleReceipt = () => {
-    setReceiptMeta(SAMPLE_REPAYMENT_RECEIPT.meta);
+    setReceiptMetas([SAMPLE_REPAYMENT_RECEIPT.meta]);
     const baseDate = '2019-12-10';
     const sampleRecords = SAMPLE_REPAYMENT_RECEIPT.records.map(r => ({
       ...r,
@@ -528,7 +685,7 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
   // 清空扣款流水
   const handleClearRepayments = () => {
     setRepayments([]);
-    setReceiptMeta(null);
+    setReceiptMetas([]);
     if (params) {
       triggerRecalculate(params, []);
     }
@@ -577,7 +734,7 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
       if (des.text.includes('个人贷款扣款回单') || des.text.includes('交易流水号') || des.text.includes('归还本金')) {
         const parsedReceipt = parseRepaymentReceiptFromText(des.text);
         if (parsedReceipt.records.length > 0) {
-          setReceiptMeta(desensitizeReceiptMeta(parsedReceipt.meta));
+          setReceiptMetas([desensitizeReceiptMeta(parsedReceipt.meta)]);
           const baseDate = params?.baseDate || parsedReceipt.meta.loanDueDate || '2019-12-10';
           const recs = parsedReceipt.records.map(r => ({
             ...r,
@@ -666,16 +823,15 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
       rawOutput: JSON.stringify({
         isBatchCase: true,
         batchClients: SAMPLE_BATCH_CLIENTS,
-        note: '样例已自动组装 7 名客户附表明细（每人利率独立）'
+        note: '样例已自动组装 8 名客户附表明细（每人利率独立；其中戴某名下含 4 个贷款协议号，演示分协议独立计息）'
       }, null, 2),
     };
 
     setAnalysisResult(mockAnalysis);
     setParams(initialBatchParams);
 
-    const calculator = new InterestCalculator();
-    const calcResult = calculator.calculate(initialBatchParams);
-    setResult(calcResult);
+    // 多协议客户自动启用分协议独立计息后汇总；单协议客户走整体测算
+    runCalculation(initialBatchParams, [], firstClient);
   };
 
   // 用户在批量列表中切换选定特定客户并立即重算
@@ -685,12 +841,13 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
     if (!analysisResult) return;
 
     // 依据选定客户重构计算参数（严格精确到分位，并完整载入该借款人专属年利率）
+    // basePenalty 语义：判决暂计罚息 + 复利 合并计入罚息池（与分协议计算口径一致）
     const currentParams = params || analysisResult.params;
     const updatedParams: CalculationParams = {
       ...currentParams,
       principal: roundToFen(client.principal),
       baseInterest: roundToFen(client.baseInterest),
-      basePenalty: roundToFen(client.basePenalty),
+      basePenalty: roundToFen((client.basePenalty || 0) + (client.baseCompound || 0)),
       litigationFee: roundToFen(client.litigationFee || 0),
       preservationFee: roundToFen(client.preservationFee || 0),
       baseDate: client.cutoffDate || currentParams.baseDate,
@@ -712,16 +869,8 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
       selectedClientId: client.id,
     });
 
-    setParams(updatedParams);
-
-    // 立即执行确定性精算
-    try {
-      const calculator = new InterestCalculator();
-      const calcRes = calculator.calculate(updatedParams);
-      setResult(calcRes);
-    } catch (err) {
-      console.error('切换客户重算异常:', err);
-    }
+    // 立即执行确定性精算（多协议客户自动启用分协议独立计息后汇总）
+    runCalculation(updatedParams, repayments, client);
   };
 
   // Agent 核心触发逻辑：调用真实大模型接口
@@ -784,25 +933,28 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
       setAnalysisResult(parsedData);
       setParams(parsedData.params);
 
-      // 若包含还款流水，同步填充状态
+      // 若包含还款流水，同步填充状态（回单摘要随之刷新）
       if (parsedData.repayments && parsedData.repayments.length > 0) {
         setRepayments(parsedData.repayments);
-      }
-      if (parsedData.receiptMeta) {
-        setReceiptMeta(parsedData.receiptMeta);
+        setReceiptMetas(parsedData.receiptMeta ? [parsedData.receiptMeta] : []);
+      } else if (parsedData.receiptMeta) {
+        setReceiptMetas([parsedData.receiptMeta]);
       }
 
       let effectiveParams = parsedData.params;
 
       // 若识别出批量客户，默认选中第 1 位客户，并完整载入该客户专属利率与本金
+      let targetClient: BatchCaseClient | null = null;
       if (parsedData.batchClients && parsedData.batchClients.length > 0) {
         const firstC = parsedData.batchClients[0];
+        targetClient = firstC;
         setSelectedClientId(firstC.id);
         effectiveParams = {
           ...effectiveParams,
           principal: roundToFen(firstC.principal),
           baseInterest: roundToFen(firstC.baseInterest),
-          basePenalty: roundToFen(firstC.basePenalty),
+          // basePenalty 语义：暂计罚息 + 复利 合并计入罚息池（与分协议计算口径一致）
+          basePenalty: roundToFen((firstC.basePenalty || 0) + (firstC.baseCompound || 0)),
           litigationFee: roundToFen(firstC.litigationFee || 0),
           preservationFee: roundToFen(firstC.preservationFee || 0),
           baseDate: firstC.cutoffDate || effectiveParams.baseDate,
@@ -814,15 +966,15 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
           executionDueDate: firstC.executionDueDate || effectiveParams.executionDueDate,
           dayCountConvention: firstC.dayCountConvention || effectiveParams.dayCountConvention || '30_360',
         };
-        setParams(effectiveParams);
       } else {
         setSelectedClientId(null);
       }
 
-      // 2. 调度确定性高精算法进行清算
-      const calculator = new InterestCalculator();
-      const calcResult = calculator.calculate(effectiveParams);
-      setResult(calcResult);
+      // 2. 调度确定性高精算法进行清算（多协议客户自动启用分协议独立计息后汇总）
+      const repaymentsForCalc = (parsedData.repayments && parsedData.repayments.length > 0)
+        ? parsedData.repayments
+        : (effectiveParams.repayments || []);
+      runCalculation(effectiveParams, repaymentsForCalc, targetClient);
     } catch (err: any) {
       console.error('大模型解析调用失败:', err);
       setErrorMessage(err.message || '大模型调用异常，请检查网络或配置');
@@ -1031,17 +1183,23 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                   <input
                     type="file"
                     ref={repaymentFileInputRef}
-                    onChange={(e) => e.target.files?.[0] && handleRepaymentPdfUpload(e.target.files[0])}
-                    accept=".pdf"
+                    multiple
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleRepaymentPdfUpload(e.target.files);
+                      }
+                      e.target.value = '';
+                    }}
+                    accept=".pdf,application/pdf"
                     className="hidden"
                   />
                   <button
                     onClick={() => repaymentFileInputRef.current?.click()}
                     disabled={isUploading}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 border border-emerald-700/60 transition-all shadow-sm"
-                    title="独立上传并提取行内《个人贷款扣款回单》PDF 表格流水"
+                    title="独立上传并提取行内《个人贷款扣款回单》PDF 表格流水（多协议号案件可一次选中多份回单，每个协议号一份，系统将按协议号分账）"
                   >
-                    <CreditCard className="w-3.5 h-3.5 text-emerald-400" /> 导入扣款明细 (PDF)
+                    <CreditCard className="w-3.5 h-3.5 text-emerald-400" /> 导入扣款明细 (PDF，可多选)
                   </button>
 
                   <input
@@ -1342,6 +1500,14 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                                 <td className="px-3.5 py-2.5 font-bold text-white whitespace-nowrap">
                                   {client.defendant}
                                   {client.gender && <span className="ml-1 text-[11px] font-normal text-slate-400">({client.gender})</span>}
+                                  {(client.loans?.length || 0) >= 2 && (
+                                    <span
+                                      className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-700/60 whitespace-nowrap"
+                                      title={`该被告名下含 ${client.loans!.length} 个贷款协议号，已启用分协议号独立计息，Excel 导出将按协议维度列示`}
+                                    >
+                                      多协议×{client.loans!.length}
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-3.5 py-2.5 font-mono text-xs text-slate-300 whitespace-nowrap">
                                   {client.idCard || '-'}
@@ -1473,16 +1639,24 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                       </div>
                     </div>
 
-                    {/* 借据抬头摘要条（若有） */}
-                    {receiptMeta && (
-                      <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-400">
-                        {receiptMeta.borrowerName && <span>借款人：<strong className="text-slate-200">{receiptMeta.borrowerName}</strong></span>}
-                        {receiptMeta.loanReceiptNo && <span>借据号：<span className="font-mono text-slate-200">{receiptMeta.loanReceiptNo}</span></span>}
-                        {receiptMeta.loanAmount !== undefined && <span>借款金额：<span className="font-mono text-emerald-400">￥{formatMoney(receiptMeta.loanAmount)}</span></span>}
-                        {receiptMeta.loanStartDate && <span>借款期限：<span className="font-mono text-slate-300">{receiptMeta.loanStartDate} 至 {receiptMeta.loanDueDate || '-'}</span></span>}
-                        {receiptMeta.loanOrg && <span>经办机构：<span className="text-slate-300">{receiptMeta.loanOrg}</span></span>}
+                    {/* 借据抬头摘要条（若有；多协议号案件逐份回单展示，含协议号徽标） */}
+                    {receiptMetas.map((meta, mi) => (
+                      <div key={mi} className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-400">
+                        {receiptMetas.length > 1 && (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-bold text-slate-300">回单 {mi + 1}</span>
+                        )}
+                        {meta.borrowerName && <span>借款人：<strong className="text-slate-200">{meta.borrowerName}</strong></span>}
+                        {meta.loanReceiptNo && <span>借据号：<span className="font-mono text-slate-200">{meta.loanReceiptNo}</span></span>}
+                        {meta.agreementNo && (
+                          <span className="px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 font-mono text-[10px]">
+                            协议号 {meta.agreementNo}
+                          </span>
+                        )}
+                        {meta.loanAmount !== undefined && <span>借款金额：<span className="font-mono text-emerald-400">￥{formatMoney(meta.loanAmount)}</span></span>}
+                        {meta.loanStartDate && <span>借款期限：<span className="font-mono text-slate-300">{meta.loanStartDate} 至 {meta.loanDueDate || '-'}</span></span>}
+                        {meta.loanOrg && <span>经办机构：<span className="text-slate-300">{meta.loanOrg}</span></span>}
                       </div>
-                    )}
+                    ))}
 
                     {/* 还款明细表格 */}
                     <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80 max-h-72 overflow-y-auto shadow-inner">
@@ -1505,6 +1679,9 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                           {repayments.map((r, idx) => {
                             const isAfterBase = params?.baseDate ? dayjs(r.date).isAfter(dayjs(params.baseDate)) : true;
                             const isSelected = r.selected !== false;
+                            // 多协议案件：流水协议号未匹配当前清算客户的任何协议 → 分协议计算时不参与冲抵
+                            const activeLoans = getSelectedClientLoans();
+                            const unmatchedAgreement = !!(r.agreementNo && activeLoans.length >= 2 && !activeLoans.some(l => l.agreementNo === r.agreementNo));
                             return (
                               <tr
                                 key={r.id || idx}
@@ -1524,7 +1701,12 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                                   />
                                 </td>
                                 <td className="px-3.5 py-2 text-slate-400 font-mono">{idx + 1}</td>
-                                <td className="px-3.5 py-2 font-mono font-medium text-slate-200">{r.serialNo}</td>
+                                <td className="px-3.5 py-2 font-mono font-medium text-slate-200">
+                                  {r.serialNo}
+                                  {r.agreementNo && (
+                                    <div className="text-[10px] font-normal text-blue-400/90 mt-0.5">协议 {r.agreementNo}</div>
+                                  )}
+                                </td>
                                 <td className="px-3.5 py-2 font-mono text-slate-300">{r.date}</td>
                                 <td className="px-3.5 py-2 text-right font-mono font-semibold text-emerald-400">
                                   ￥{formatMoney(r.principal)}
@@ -1542,7 +1724,14 @@ export const AgentUI: React.FC<AgentUIProps> = ({ sessionUsername, onLogout }) =
                                   ￥{formatMoney(r.totalAmount)}
                                 </td>
                                 <td className="px-3.5 py-2 text-center">
-                                  {isAfterBase ? (
+                                  {unmatchedAgreement ? (
+                                    <span
+                                      className="px-2 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-300 border border-rose-800"
+                                      title="该流水的协议号未匹配当前清算客户的任何贷款协议，分协议计算时不参与冲抵，请核对回单归属"
+                                    >
+                                      未匹配协议号 · 未参与分账
+                                    </span>
+                                  ) : isAfterBase ? (
                                     <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-950 text-emerald-300 border border-emerald-800">
                                       判决基准日后 · 冲减算息
                                     </span>

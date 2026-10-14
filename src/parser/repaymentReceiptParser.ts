@@ -1,5 +1,5 @@
 import { RepaymentRecord, RepaymentReceiptMeta } from '../core/types';
-import { roundToFen } from '../core/calculator';
+import { roundToFen, normalizeAgreementNo } from '../core/calculator';
 
 /**
  * 扣款回单解析产物
@@ -55,7 +55,18 @@ export function parseRepaymentReceiptFromText(text: string): RepaymentReceiptPar
 
   // 1. 抽取借据抬头信息
   const receiptNoMatch = text.match(/贷款借据号\s*[:：|]?\s*([0-9A-Za-z\/\-_]+)/);
-  if (receiptNoMatch) meta.loanReceiptNo = receiptNoMatch[1].trim();
+  if (receiptNoMatch) {
+    meta.loanReceiptNo = receiptNoMatch[1].trim();
+    // 归一化协议号 (去除斜杠等分隔符)，用于与附表贷款协议号匹配分账
+    meta.agreementNo = normalizeAgreementNo(meta.loanReceiptNo);
+  } else {
+    // 兜底：从文本中探测形如 811032383950/002 的借据号片段
+    const fallbackMatch = text.match(/\b(\d{12,20})[\/\-](\d{2,4})\b/);
+    if (fallbackMatch) {
+      meta.loanReceiptNo = `${fallbackMatch[1]}/${fallbackMatch[2]}`;
+      meta.agreementNo = `${fallbackMatch[1]}${fallbackMatch[2]}`;
+    }
+  }
 
   const loanTypeMatch = text.match(/贷款品种\s*[:：|]?\s*([^\n|]+)/);
   if (loanTypeMatch) meta.loanType = loanTypeMatch[1].trim();
@@ -129,6 +140,7 @@ export function parseRepaymentReceiptFromText(text: string): RepaymentReceiptPar
         compound,
         totalAmount,
         selected: true,
+        agreementNo: meta.agreementNo,
       });
       continue;
     }
@@ -157,6 +169,7 @@ export function parseRepaymentReceiptFromText(text: string): RepaymentReceiptPar
             compound,
             totalAmount,
             selected: true,
+            agreementNo: meta.agreementNo,
           });
         }
       }
@@ -189,6 +202,7 @@ export function parseRepaymentReceiptFromText(text: string): RepaymentReceiptPar
 export const SAMPLE_REPAYMENT_RECEIPT: RepaymentReceiptParseResult = {
   meta: {
     loanReceiptNo: '811032260373/001',
+    agreementNo: '811032260373001',
     loanType: '信用贷款-消费-非场景-互联网',
     loanOrg: '深圳高新区支行',
     repaymentMethod: '到期还本定期还息',

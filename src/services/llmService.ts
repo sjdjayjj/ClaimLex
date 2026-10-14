@@ -1,6 +1,6 @@
 import { CalculationParams, RepaymentRecord } from '../core/types';
-import { roundToFen } from '../core/calculator';
-import { LLMConfig, LLMPreset, ParsedAnalysisResult, BatchCaseClient } from './llmTypes';
+import { roundToFen, normalizeAgreementNo } from '../core/calculator';
+import { LLMConfig, LLMPreset, ParsedAnalysisResult, BatchCaseClient, BatchClientLoan } from './llmTypes';
 import { getAuthHeaders } from './authService';
 import { parseRepaymentReceiptFromText, normalizeDate } from '../parser/repaymentReceiptParser';
 import { JUDGMENT_PARSER_PROMPT } from '../parser/prompt';
@@ -401,6 +401,29 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
     notes: c.notes,
   }));
 
+  // 3.1 解析每位客户名下的分协议号贷款明细（同一被告多协议号场景，逐行独立计息）
+  batchClients.forEach((c, idx) => {
+    const rawLoans = Array.isArray(rawBatchClients[idx]?.loans) ? rawBatchClients[idx].loans : [];
+    const loans: BatchClientLoan[] = rawLoans
+      .filter((l: any) => l && (l.agreementNo || l.loanAgreementNo))
+      .map((l: any) => ({
+        agreementNo: normalizeAgreementNo(String(l.agreementNo || l.loanAgreementNo || '')),
+        principal: roundToFen(Number(l.principal) || 0),
+        baseInterest: roundToFen(Number(l.baseInterest) || 0),
+        basePenalty: roundToFen(Number(l.basePenalty) || 0),
+        baseCompound: roundToFen(Number(l.baseCompound) || 0),
+        annualRate: l.annualRate !== undefined && l.annualRate !== null ? Number(l.annualRate) : undefined,
+        penaltyRate: l.penaltyRate !== undefined && l.penaltyRate !== null ? Number(l.penaltyRate) : undefined,
+        termMonths: l.termMonths !== undefined && l.termMonths !== null ? Number(l.termMonths) : undefined,
+        loanStartDate: l.loanStartDate ? normalizeDate(l.loanStartDate) : undefined,
+        loanDueDate: l.loanDueDate ? normalizeDate(l.loanDueDate) : undefined,
+        cutoffDate: typeof l.cutoffDate === 'string' && l.cutoffDate.length >= 8 ? normalizeDate(l.cutoffDate) : undefined,
+      }));
+    if (loans.length > 0) {
+      c.loans = loans;
+    }
+  });
+
   const isBatchCase = rawJson.isBatchCase === true || batchClients.length > 1;
 
   // 4. 解析还款扣款明细记录
@@ -418,6 +441,7 @@ function normalizeExtractedParams(rawJson: any): { params: CalculationParams; ex
       compound: roundToFen(Number(r.compound) || 0),
       totalAmount: roundToFen(Number(r.totalAmount) || 0),
       selected: typeof r.selected === 'boolean' ? r.selected : isAfterBase,
+      agreementNo: r.agreementNo ? normalizeAgreementNo(String(r.agreementNo)) : undefined,
       remark: r.remark || (isAfterBase ? '判决后还款冲减' : '判决前还款'),
     };
   });
